@@ -1,0 +1,115 @@
+{
+  "object": {
+    "pins": [
+      {
+        "package": "Base32",
+        "repositoryURL": "https://github.com/norio-nomura/Base32.git",
+        "state": {
+          "branch": null,
+          "revision": "c4bc0a49689999ae2c7c778f3830a6a6e694efb8",
+          "version": "0.9.0"
+        }
+      },
+      {
+        "package": "BigInt",
+        "repositoryURL": "https://github.com/attaswift/BigInt.git",
+        "state": {
+          "branch": null,
+          "revision": "0ed110f7555c34ff468e72e1686e59721f2b0da6",
+          "version": "5.3.0"
+        }
+      },
+      {
+        "package": "BIP39",
+        "repositoryURL": "https://github.com/bitmark-inc/bip39-swift.git",
+        "state": {
+          "branch": null,
+          "revision": "55e842d8cf7c307644738e4f53ef85c657a18e4b",
+          "version": "1.0.1"
+        }
+      },
+      {
+        "package": "CryptoSwift",
+        "repositoryURL": "https://github.com/krzyzanowskim/CryptoSwift.git",
+        "state": {
+          "branch": null,
+          "revision": "132f5b209cd0251067f29cdb59c97d9f8a63252a",
+          "version": "1.8.5"
+        }
+      },
+      {
+        "package": "ed25519swift",
+        "repositoryURL": "https://github.com/pebble8888/ed25519swift.git",
+        "state": {
+          "branch": null,
+          "revision": "1e821f5516049f5b83aca8cb3b982910cf8c028c",
+          "version": "1.2.8"
+        }
+      },
+      {
+        "package": "Float16",
+        "repositoryURL": "https://github.com/SusanDoggie/Float16.git",
+        "state": {
+          "branch": null,
+          "revision": "936ae66adccf1c91bcaeeb9c0cddde78a13695c3",
+          "version": "1.1.1"
+        }
+      },
+      {
+        "package": "PotentCodables",
+        "repositoryURL": "https://github.com/outfoxx/PotentCodables.git",
+        "state": {
+          "branch": null,
+          "revision": "acfa8ee4108255c3f60ecfe11df75f70784a17da",
+          "version": "3.5.2"
+        }
+      },
+      {
+        "package": "Regex",
+        "repositoryURL": "https://github.com/sharplet/Regex.git",
+        "state": {
+          "branch": null,
+          "revision": "76c2b73d4281d77fc3118391877efd1bf972f515",
+          "version": "2.1.1"
+        }
+      },
+      {
+        "package": "swift-asn1",
+        "repositoryURL": "https://github.com/apple/swift-asn1.git",
+        "state": {
+          "branch": null,
+          "revision": "f70225981241859eb4aa1a18a75531d26637c8cc",
+          "version": "1.4.0"
+        }
+      },
+      {
+        "package": "swift-collections",
+        "repositoryURL": "https://github.com/apple/swift-collections.git",
+        "state": {
+          "branch": null,
+          "revision": "c1805596154bb3a265fd91b8ac0c4433b4348fb0",
+          "version": "1.2.0"
+        }
+      },
+      {
+        "package": "swift-numerics",
+        "repositoryURL": "https://github.com/apple/swift-numerics",
+        "state": {
+          "branch": null,
+          "revision": "e0ec0f5f3af6f3e4d5e7a19d2af26b481acb6ba8",
+          "version": "1.0.3"
+        }
+      },
+      {
+        "package": "swift-secp256k1",
+        "repositoryURL": "https://github.com/21-DOT-DEV/swift-secp256k1",
+        "state": {
+          "branch": null,
+          "revision": "8c62aba8a3011c9bcea232e5ee007fb0b34a15e2",
+          "version": "0.21.1"
+        }
+      }
+    ]
+  },
+  "version": 1
+}
