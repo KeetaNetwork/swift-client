@@ -5,6 +5,7 @@ public enum KeetaApiError: Error {
     case invalidBalanceValue(_ value: String)
     case invalidSupplyValue(_ value: String)
     case clientRepresentativeNotFound(_ address: String)
+    case noVotes(errors: [Error])
     case missingAtLeastOneRep
     case blockMismatch
     case notPublished
@@ -47,17 +48,38 @@ public final class KeetaApi: HTTPClient {
         
         // Request votes
         let requests = try KeetaEndpoint.votes(for: blocks, temporaryVotes: temporaryVotes, from: repUrls)
+        var errors = [Error]()
         
-        return try await withThrowingTaskGroup(of: VoteResponse.self) { group in
+        return try await withThrowingTaskGroup(of: VoteResponse?.self) { group in
             for request in requests {
-                group.addTask { try await self.sendRequest(to: request) }
+                group.addTask {
+                    do {
+                        return try await self.sendRequest(to: request)
+                    } catch {
+                        if temporaryVotes?.isEmpty == false {
+                            // a permanent vote is required for each temporary vote
+                            throw error
+                        } else {
+                            // silently skip reps that can't provide a temporary vote
+                            errors.append(error)
+                            return nil
+                        }
+                    }
+                }
             }
             
             var results: [Vote] = []
             for try await result in group {
-                let vote = try Vote.create(from: result.vote.binary)
-                results.append(vote)
+                if let result {
+                    let vote = try Vote.create(from: result.vote.binary)
+                    results.append(vote)
+                }
             }
+            
+            guard !results.isEmpty else {
+                throw KeetaApiError.noVotes(errors: errors)
+            }
+            
             return results
         }
     }
