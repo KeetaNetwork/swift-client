@@ -148,7 +148,8 @@ public final class KeetaApi: HTTPClient {
         return .init(account: result.account, balances: balances, currentHeadBlock: result.currentHeadBlock)
     }
     
-    public func updateRepresentatives(replace: Bool = true) async throws {
+    @discardableResult
+    public func updateRepresentatives(replace: Bool = true) async throws -> [ClientRepresentative] {
         let endpoint = KeetaEndpoint.representatives(baseUrl: preferredRep.apiUrl)
         let response: RepresentativesResponse = try await sendRequest(to: endpoint)
         
@@ -176,6 +177,8 @@ public final class KeetaApi: HTTPClient {
         if let preferredRep = reps.preferred {
             self.preferredRep = preferredRep
         }
+        
+        return reps
     }
     
     public func accountInfo(for account: Account) async throws -> AccountInfo {
