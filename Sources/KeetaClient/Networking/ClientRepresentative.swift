@@ -13,3 +13,9 @@ public struct ClientRepresentative {
         self.weight = weight
     }
 }
+
+extension [ClientRepresentative] {
+    var preferred: Element? {
+        self.max { ($0.weight ?? 0) < ($1.weight ?? 0) }
+    }
+}

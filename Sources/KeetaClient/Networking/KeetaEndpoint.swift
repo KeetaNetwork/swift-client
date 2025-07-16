@@ -49,6 +49,10 @@ struct KeetaEndpoint: Endpoint {
         return repBaseUrls.map { .init(url: $0 + "/node/publish", method: .post, body: body) }
     }
     
+    static func representatives(baseUrl: String) -> Self {
+        .init(url: baseUrl + "/node/ledger/representatives", method: .get)
+    }
+    
     static func accountInfo(of account: Account, baseUrl: String) -> Self {
         .init(url: baseUrl + "/node/ledger/account/\(account.publicKeyString)", method: .get)
     }

@@ -141,6 +141,21 @@ class ApiTests: XCTestCase {
         try await api.verify(account: newRecipient, head: nil, balance: .init(2))
     }
     
+    func test_updateReps() async throws {
+        let api = try createAPI()
+        try await api.updateRepresentatives()
+        
+        api.reps.forEach {
+            XCTAssertNotNil($0.weight, "Expected rep \($0.address) to have weight")
+        }
+        
+        let preferredRep = try XCTUnwrap(api.preferredRep)
+        let otherReps = api.reps.filter { $0.address != preferredRep.address }
+        
+        let highestWeight = try XCTUnwrap(preferredRep.weight)
+        XCTAssertTrue(otherReps.allSatisfy { ($0.weight ?? 0) <= highestWeight })
+    }
+    
     func test_history() async throws {
         let api = try createAPI()
         let history = try await api.history(of: wellFundedAccount)
