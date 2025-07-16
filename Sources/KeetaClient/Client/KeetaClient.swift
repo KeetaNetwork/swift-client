@@ -56,9 +56,8 @@ public final class KeetaClient {
     }
     
     @discardableResult
-    public func send(amount: BigInt, from fromPubKeyAccount: String, to toPubKeyAccount: String, memo: String? = nil) async throws -> String {
+    public func send(amount: BigInt, from fromAccount: Account, to toPubKeyAccount: String, memo: String? = nil) async throws -> String {
         let toAccount = try AccountBuilder.create(fromPublicKey: toPubKeyAccount)
-        let fromAccount = try AccountBuilder.create(fromPublicKey: fromPubKeyAccount)
         return try await send(amount: amount, from: fromAccount, to: toAccount, memo: memo)
     }
     
@@ -68,9 +67,8 @@ public final class KeetaClient {
     }
     
     @discardableResult
-    public func send(amount: BigInt, from fromPubKeyAccount: String, to toPubKeyAccount: String, token tokenPubKey: String, memo: String? = nil) async throws -> String {
+    public func send(amount: BigInt, from fromAccount: Account, to toPubKeyAccount: String, token tokenPubKey: String, memo: String? = nil) async throws -> String {
         let toAccount = try AccountBuilder.create(fromPublicKey: toPubKeyAccount)
-        let fromAccount = try AccountBuilder.create(fromPublicKey: fromPubKeyAccount)
         let token = try AccountBuilder.create(fromPublicKey: tokenPubKey)
         return try await send(amount: amount, from: fromAccount, to: toAccount, token: token, memo: memo)
     }
