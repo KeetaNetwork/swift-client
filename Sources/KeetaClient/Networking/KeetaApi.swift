@@ -13,9 +13,9 @@ public enum KeetaApiError: Error {
 public final class KeetaApi: HTTPClient {
 
     public var preferredRep: ClientRepresentative
+    public var reps: [ClientRepresentative]
     
     private let publishAidUrl: String
-    private let reps: [ClientRepresentative]
     private let decoder: Decoder = JSONDecoder()
 
     public convenience init(config: NetworkConfig) throws {
@@ -27,7 +27,7 @@ public final class KeetaApi: HTTPClient {
         
         self.publishAidUrl = publishAidUrl
         self.reps = reps
-        self.preferredRep = preferredRep ?? reps[0]
+        self.preferredRep = reps.preferred ?? reps[0]
     }
     
     public func votes(for blocks: [Block], temporaryVotes: [Vote]? = nil) async throws -> [Vote] {
@@ -131,7 +131,9 @@ public final class KeetaApi: HTTPClient {
         }
     }
     
-    public func balance(for account: Account) async throws -> AccountBalance {
+    public func balance(for account: Account, replaceReps: Bool = false) async throws -> AccountBalance {
+        try await updateRepresentatives(replace: replaceReps)
+        
         let repUrl = preferredRep.apiUrl
         let result: AccountStateResponse = try await sendRequest(to: KeetaEndpoint.accountInfo(of: account, baseUrl: repUrl))
 
@@ -144,6 +146,36 @@ public final class KeetaApi: HTTPClient {
         }
         
         return .init(account: result.account, balances: balances, currentHeadBlock: result.currentHeadBlock)
+    }
+    
+    public func updateRepresentatives(replace: Bool = true) async throws {
+        let endpoint = KeetaEndpoint.representatives(baseUrl: preferredRep.apiUrl)
+        let response: RepresentativesResponse = try await sendRequest(to: endpoint)
+        
+        func rep(from rep: RepresentativeResponse) -> ClientRepresentative {
+            .init(
+                address: rep.representative,
+                apiUrl: rep.endpoints.api,
+                socketUrl: rep.endpoints.p2p,
+                weight: BigInt(hex: rep.weight)
+            )
+        }
+        
+        if reps.isEmpty || replace {
+            reps = response.representatives.map { rep(from: $0) }
+        } else {
+            // only update known reps
+            for (index, knownRep) in reps.enumerated() {
+                if let update = response.representatives
+                    .first(where: { $0.representative.lowercased() == knownRep.address.lowercased() }) {
+                    reps[index] = rep(from: update)
+                }
+            }
+        }
+        
+        if let preferredRep = reps.preferred {
+            self.preferredRep = preferredRep
+        }
     }
     
     public func accountInfo(for account: Account) async throws -> AccountInfo {
