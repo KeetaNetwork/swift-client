@@ -54,9 +54,15 @@ class ApiTests: XCTestCase {
             _ = try await api.votes(for: [anotherSendBlock])
             XCTFail("Shouldn't receive votes for a conflicting block")
             return
-        } catch RequestError<KeetaErrorResponse>.error(_, let error) {
-            XCTAssertEqual(error.type, .ledger)
-            XCTAssertEqual(error.code, .successorVoteExists)
+        } catch KeetaApiError.noVotes(let errors) {
+            let error = try XCTUnwrap(errors.first)
+            
+            if case RequestError<KeetaErrorResponse>.error(_, let error) = error {
+                XCTAssertEqual(error.type, .ledger)
+                XCTAssertEqual(error.code, .successorVoteExists)
+            } else {
+                XCTFail("Unknown error: \(error)")
+            }
         } catch {
             XCTFail("Unknown error: \(error)")
         }
