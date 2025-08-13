@@ -120,27 +120,6 @@ class ApiTests: XCTestCase {
         try await api.verify(account: newRecipient, head: nil, balance: .init(1))
     }
     
-    func test_api_publishWithAid() async throws {
-        let api = try createAPI()
-        
-        let newRecipient = try AccountBuilder.new()
-        try await api.verify(account: newRecipient, head: nil, balance: nil)
-
-        let send = try SendOperation(amount: BigInt(2), to: newRecipient, token: config.baseToken)
-
-        let senderBalance = try await createAPI().balance(for: wellFundedAccount)
-        let sendBlock = try BlockBuilder()
-            .start(from: senderBalance.currentHeadBlock, network: config.networkID)
-            .add(account: wellFundedAccount)
-            .add(operation: send)
-            .seal()
-        
-        try await api.publish(blocks: [sendBlock], networkAlias: config.networkAlias, usePublishAid: true)
-        
-        // Verify recipient's balance is updated
-        try await api.verify(account: newRecipient, head: nil, balance: .init(2))
-    }
-    
     func test_updateReps() async throws {
         let api = try createAPI()
         try await api.updateRepresentatives()
@@ -394,6 +373,6 @@ class ApiTests: XCTestCase {
     // MARK: - Helper
 
     func createAPI() throws -> KeetaApi {
-        try KeetaApi(publishAidUrl: config.publishAidUrl, reps: config.reps)
+        try KeetaApi(reps: config.reps)
     }
 }

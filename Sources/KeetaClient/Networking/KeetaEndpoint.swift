@@ -26,11 +26,6 @@ struct KeetaEndpoint: Endpoint {
         }
     }
     
-    static func publish(blocks: [Block], networkAlias: NetworkAlias, aidBaseUrl: String) throws -> Self {
-        let body = try SendBlocksRequest(blocks: blocks, networkAlias: networkAlias).toJSON()
-        return .init(url: aidBaseUrl + "/publish", method: .post, body: body)
-    }
-    
     static func votes(for blocks: [Block], temporaryVotes: [Vote]? = nil, from repBaseUrls: Set<String>) throws -> [Self] {
         let body = try VoteRequest(blocks: blocks, votes: temporaryVotes).toJSON()
         return repBaseUrls.map { .init(url: $0 + "/vote", method: .post, body: body) }

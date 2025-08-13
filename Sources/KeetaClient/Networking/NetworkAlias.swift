@@ -27,10 +27,4 @@ public enum NetworkAlias: String {
         
         return addresses[number - 1]
     }
-    
-    public func keetaPublishAidBaseUrl() -> String {
-        switch self {
-        case .test: "https://publish-aid.test.network.api.keeta.com/api"
-        }
-    }
 }

@@ -16,17 +16,15 @@ public final class KeetaApi: HTTPClient {
     public var preferredRep: ClientRepresentative
     public var reps: [ClientRepresentative]
     
-    private let publishAidUrl: String
     private let decoder: Decoder = JSONDecoder()
 
     public convenience init(config: NetworkConfig) throws {
-        try self.init(publishAidUrl: config.publishAidUrl, reps: config.reps)
+        try self.init(reps: config.reps)
     }
     
-    public init(publishAidUrl: String, reps: [ClientRepresentative], preferredRep: ClientRepresentative? = nil) throws {
+    public init(reps: [ClientRepresentative], preferredRep: ClientRepresentative? = nil) throws {
         if reps.isEmpty { throw KeetaApiError.missingAtLeastOneRep }
         
-        self.publishAidUrl = publishAidUrl
         self.reps = reps
         self.preferredRep = reps.preferred ?? reps[0]
     }
@@ -141,16 +139,11 @@ public final class KeetaApi: HTTPClient {
         }
     }
     
-    public func publish(blocks: [Block], networkAlias: NetworkAlias, usePublishAid: Bool = false) async throws {
-        if usePublishAid {
-            let request = try KeetaEndpoint.publish(blocks: blocks, networkAlias: networkAlias, aidBaseUrl: publishAidUrl)
-            _ = try await sendRequest(to: request)
-        } else {
-            let temporaryVotes = try await votes(for: blocks)
-            let permanentVotes = try await votes(for: blocks, temporaryVotes: temporaryVotes)
-            let voteStaple = try VoteStaple.create(from: permanentVotes, blocks: blocks)
-            try await publish(voteStaple: voteStaple)
-        }
+    public func publish(blocks: [Block], networkAlias: NetworkAlias) async throws {
+        let temporaryVotes = try await votes(for: blocks)
+        let permanentVotes = try await votes(for: blocks, temporaryVotes: temporaryVotes)
+        let voteStaple = try VoteStaple.create(from: permanentVotes, blocks: blocks)
+        try await publish(voteStaple: voteStaple)
     }
     
     public func balance(for account: Account, replaceReps: Bool = false) async throws -> AccountBalance {

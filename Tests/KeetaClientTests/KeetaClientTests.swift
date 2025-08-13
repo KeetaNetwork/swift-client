@@ -172,7 +172,7 @@ final class KeetaClientTests: XCTestCase {
     
     private func fund(account: Account, amount: BigInt) async throws {
         let config: NetworkConfig = try .create(for: .test)
-        let api = try KeetaApi(publishAidUrl: config.publishAidUrl, reps: config.reps)
+        let api = try KeetaApi(reps: config.reps)
         try await api.send(amount: amount, from: wellFundedAccount, to: account, config: config)
     }
 }

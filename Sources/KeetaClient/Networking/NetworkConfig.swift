@@ -4,7 +4,6 @@ public struct NetworkConfig {
     public let baseToken: Account
     public let fountain: Account
     public let reps: [ClientRepresentative]
-    public let publishAidUrl: String
     
     public static func create(for network: NetworkAlias) throws -> Self {
         let networkID: NetworkID = switch network {
@@ -31,8 +30,7 @@ public struct NetworkConfig {
                     address: network.keetaRepAddress(number: $0),
                     apiUrl: network.keetaRepApiBaseUrl(number: $0),
                     socketUrl: network.keetaRepSocketBaseUrl(number: $0))
-            },
-            publishAidUrl: network.keetaPublishAidBaseUrl()
+            }
         )
     }
 }
