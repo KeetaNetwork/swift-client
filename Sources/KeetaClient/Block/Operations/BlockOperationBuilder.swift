@@ -11,8 +11,7 @@ public struct BlockOperationBuilder {
         guard let tag = asn1.taggedValue else {
             throw BlockOperationBuilderError.invalidTag
         }
-        // Mask to extract the last 5 bits from decimal value
-        let operationTypeRaw = tag.tag & 0b0001_1111
+        let operationTypeRaw = tag.implicitTag
         
         guard let type = BlockOperationType(rawValue: operationTypeRaw) else {
             throw BlockOperationBuilderError.invalidOperationType

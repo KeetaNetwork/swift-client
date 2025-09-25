@@ -138,4 +138,22 @@ public struct VoteStaple {
     public func base64String() -> String {
         data.base64EncodedString()
     }
+    
+    /// Totoal amount of each token
+    public func totalFees(baseToken: Account) -> [String: BigInt] {
+        var result: [String: BigInt] = [:]
+        for vote in votes {
+            if let fee = vote.fee {
+                let token = (fee.token ?? baseToken).publicKeyString
+                result[token, default: 0] += fee.amount
+            }
+        }
+        return result
+    }
+    
+    public var totalFees: BigInt {
+        votes.reduce(0) { result, vote in
+            result + (vote.fee?.amount ?? 0)
+        }
+    }
 }

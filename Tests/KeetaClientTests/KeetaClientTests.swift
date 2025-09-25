@@ -30,6 +30,27 @@ final class KeetaClientTests: XCTestCase {
         }
     }
     
+    // TODO: enable once fees are active on the test network
+//    func test_insufficientBalanceForFees() async throws {
+//        let newAccount = try AccountBuilder.new()
+//        let recipient = try AccountBuilder.new()
+//        
+//        let client = KeetaClient(network: network, account: newAccount)
+//        
+//        // Enough funding to cover the send transaction but not the fees
+//        try await fund(account: newAccount, amount: 1)
+//        
+//        do {
+//            _ = try await client.send(amount: 1, to: recipient)
+//            XCTFail("Expected insufficient balance to cover fees to block this transaction")
+//            return
+//        } catch KeetaClientError.insufficientBalanceToCoverNetworkFees {
+//            // expected
+//        } catch {
+//            XCTFail("Unknown error: \(error)")
+//        }
+//    }
+    
     func test_transactions() async throws {
         let account1 = try AccountBuilder.new()
         let account2 = try AccountBuilder.new()
@@ -61,7 +82,7 @@ final class KeetaClientTests: XCTestCase {
         assert(account2Transactions, account2ExpectedTransactions)
     }
     
-    func test_swap() async throws {
+    func test_swapBaseToken() async throws {
         let account1 = try AccountBuilder.new()
         let account2 = try AccountBuilder.new()
         
@@ -172,7 +193,7 @@ final class KeetaClientTests: XCTestCase {
     
     private func fund(account: Account, amount: BigInt) async throws {
         let config: NetworkConfig = try .create(for: .test)
-        let api = try KeetaApi(reps: config.reps)
+        let api = try KeetaApi(config: config)
         try await api.send(amount: amount, from: wellFundedAccount, to: account, config: config)
     }
 }

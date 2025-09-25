@@ -32,6 +32,7 @@ public enum VoteError: Error {
     case invalidExtensionSequence
     case invalidExtensionCriticalCheck
     case unknownCriticalExtension(OID)
+    case invalidFeeDataExtension
     case invalidHashDataExtension
     case invalidBlocksTag
     case invalidBlocksDataSequence
@@ -44,6 +45,7 @@ public enum VoteError: Error {
     case signatureInformationMismatch
     case unsupportedSignatureScheme
     case issuerSignatureSchemeMismatch
+    case permanentVoteCanNotHaveFees
 }
 
 /*
@@ -141,6 +143,7 @@ public struct Vote {
     public let validityFrom: Date
     public let validityTo: Date
     public let signature: Signature
+    public let fee: Fee?
     public let permanent: Bool
     private let data: Data
     
@@ -193,7 +196,7 @@ public struct Vote {
         }
         
         // Validate version
-        guard versionValue.tag == 0xA0, versionValue.data.count >= 3 else { // Context-specific, constructed
+        guard versionValue.isContextSpecific, versionValue.data.count >= 3 else {
             throw VoteError.invalidVersion
         }
         guard let versionTag = ASN1.Tag(rawValue: versionValue.data[0]), versionTag == .integer else {
@@ -301,6 +304,7 @@ public struct Vote {
         }
         
         var blocks = [String]()
+        var fee: Fee?
         
         for extensionInfo in extensionsSequence {
             guard let extensionSequence = extensionInfo.sequenceValue,
@@ -328,38 +332,23 @@ public struct Vote {
                     throw VoteError.invalidHashDataExtension
                 }
                 let blocksAsn1 = try ASN1Serialization.asn1(fromDER: blocksData)
-                
-                guard let blocksTag = blocksAsn1.first?.taggedValue, blocksTag.tag == 0xA0 else {
-                    throw VoteError.invalidBlocksTag
+                blocks.append(contentsOf: try Self.blockHashes(from: blocksAsn1))
+            case .fees:
+                guard let feeData = extensionSequence[safe: 2]?.octetStringValue else {
+                    throw VoteError.invalidFeeDataExtension
                 }
-                guard let blocksDataSequence = (try ASN1Serialization.asn1(fromDER: blocksTag.data)).first?.sequenceValue else {
-                    throw VoteError.invalidBlocksDataSequence
-                }
-                guard blocksDataSequence.count == 2 else {
-                    throw VoteError.invalidBlocksSequenceLength
-                }
-                guard let hashAlgoOidValue = blocksDataSequence[0].objectIdentifierValue else {
-                    throw VoteError.invalidBlocksOID
-                }
-                guard let hashAlgoOID = OID(rawValue: hashAlgoOidValue.description) else {
-                    throw VoteError.unknownHashFunction(hashAlgoOidValue.description)
-                }
-                guard Hash.oid == hashAlgoOID else {
-                    throw VoteError.unsupportedHashFunction(hashAlgoOID)
-                }
-                guard let blocksSequence = blocksDataSequence[1].sequenceValue else {
-                    throw VoteError.invalidBlocksSequence
-                }
-                for blockData in blocksSequence {
-                    guard let blockHash = blockData.octetStringValue?.hexString else {
-                        throw VoteError.invalidBlockHash
-                    }
-                    blocks.append(blockHash)
-                }
+                let feesAsn1 = try ASN1Serialization.asn1(fromDER: feeData)
+                fee = try Fee(from: feesAsn1)
             default:
                 if critical {
                     throw VoteError.unknownCriticalExtension(oid)
                 }
+            }
+        }
+        
+        if let fee {
+            if permanent {
+                throw VoteError.permanentVoteCanNotHaveFees
             }
         }
         
@@ -375,6 +364,7 @@ public struct Vote {
         self.validityTo = validTo
         self.permanent = permanent
         self.data = data
+        self.fee = fee
     }
     
     public func toData() -> Data {
@@ -383,5 +373,44 @@ public struct Vote {
     
     public func base64String() -> String {
         data.base64EncodedString()
+    }
+    
+    // MARK: Helper
+    
+    private static func blockHashes(from blocksAsn1: [ASN1]) throws -> [String] {
+        guard let blocksTag = blocksAsn1.first?.taggedValue, blocksTag.isContextSpecific else {
+            throw VoteError.invalidBlocksTag
+        }
+        guard let blocksDataSequence = (try ASN1Serialization.asn1(fromDER: blocksTag.data)).first?.sequenceValue else {
+            throw VoteError.invalidBlocksDataSequence
+        }
+        guard blocksDataSequence.count == 2 else {
+            throw VoteError.invalidBlocksSequenceLength
+        }
+        guard let hashAlgoOidValue = blocksDataSequence[0].objectIdentifierValue else {
+            throw VoteError.invalidBlocksOID
+        }
+        guard let hashAlgoOID = OID(rawValue: hashAlgoOidValue.description) else {
+            throw VoteError.unknownHashFunction(hashAlgoOidValue.description)
+        }
+        guard Hash.oid == hashAlgoOID else {
+            throw VoteError.unsupportedHashFunction(hashAlgoOID)
+        }
+        guard let blocksSequence = blocksDataSequence[1].sequenceValue else {
+            throw VoteError.invalidBlocksSequence
+        }
+        
+        return try blocksSequence.map {
+            guard let blockHash = $0.octetStringValue?.hexString else {
+                throw VoteError.invalidBlockHash
+            }
+            return blockHash
+        }
+    }
+}
+
+public extension [Vote] {
+    var requiresFees: Bool {
+        contains { $0.fee != nil }
     }
 }

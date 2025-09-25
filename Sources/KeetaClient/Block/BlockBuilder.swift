@@ -1,18 +1,19 @@
 import Foundation
 
 public enum BlockBuilderError: Error {
-    case unsupportedBlockVersion
     case multipleSetRepOperations
     case insufficentDataToSignBlock
     case negativeNetworkId
     case negativeSubnetId
     case noPrivateKeyOrSignatureToSignBlock
     case invalidBalanceValue(String)
+    case feeBlockPreviousHashNotFound
 }
 
 public final class BlockBuilder {
     
     internal var version: Block.Version
+    internal var purpose: Block.Purpose
     internal var previous: String?
     internal var network: NetworkID?
     internal var subnet: SubnetID?
@@ -20,13 +21,60 @@ public final class BlockBuilder {
     internal var signer: Account?
     internal var operations = [BlockOperation]()
     
-    public static let currentVersion: Block.Version = 1
-
-    public init(version: Block.Version = currentVersion) throws {
-        if version != Self.currentVersion {
-            throw BlockBuilderError.unsupportedBlockVersion
+    public static func feeBlock(
+        for voteStape: VoteStaple,
+        account: Account,
+        network: NetworkAlias
+    ) throws -> Block {
+        try feeBlock(for: voteStape, account: account, network: .create(for: network))
+    }
+    
+    public static func feeBlock(
+        for voteStape: VoteStaple,
+        account: Account,
+        network: NetworkConfig
+    ) throws -> Block {
+        try feeBlock(for: voteStape, account: account, networkId: network.networkID, baseToken: network.baseToken)
+    }
+    
+    public static func feeBlock(
+        for voteStape: VoteStaple,
+        account: Account,
+        networkId: NetworkID,
+        baseToken: Account
+    ) throws -> Block {
+        guard account.canSign else {
+            throw BlockBuilderError.insufficentDataToSignBlock
         }
+        
+        guard let previous = voteStape.blocks
+            .last(where: { $0.rawData.account.publicKeyString == account.publicKeyString })?.hash else {
+                throw BlockBuilderError.feeBlockPreviousHashNotFound
+            }
+        
+        // Pay each vote issuer aka rep their respected fee
+        var operations = [SendOperation]()
+        for vote in voteStape.votes {
+            if let fee = vote.fee {
+                let send = try SendOperation(
+                    amount: fee.amount,
+                    to: fee.payTo ?? vote.issuer,
+                    token: fee.token ?? baseToken
+                )
+                operations.append(send)
+            }
+        }
+        
+        return try BlockBuilder(purpose: .fee)
+            .start(from: previous, network: networkId)
+            .add(account: account)
+            .add(operations: operations)
+            .seal()
+    }
+    
+    public init(version: Block.Version = .latest, purpose: Block.Purpose = .generic) {
         self.version = version
+        self.purpose = purpose
     }
     
     public func start(from previous: String?, network: NetworkID, subnet: SubnetID? = nil) -> BlockBuilder {
@@ -47,6 +95,13 @@ public final class BlockBuilder {
         self.signer = signer
         
         return self
+    }
+    
+    // Wait for splatting: https://github.com/swiftlang/swift/issues/42750
+    public func add(operations: [BlockOperation]) throws -> BlockBuilder {
+        var latest = self
+        try operations.forEach { latest = try latest.add(operation: $0) }
+        return latest
     }
     
     public func add(operations: BlockOperation...) throws -> BlockBuilder {
@@ -96,6 +151,7 @@ public final class BlockBuilder {
         
         let rawBlock = RawBlockData(
             version: version,
+            purpose: purpose,
             previous: previousHash,
             network: network,
             subnet: subnet,
@@ -105,6 +161,6 @@ public final class BlockBuilder {
             created: created
         )
         
-        return try Block(from: rawBlock, opening: previous == nil, signature: signature)
+        return try Block(from: rawBlock, opening: previous == nil, signature: signature.map { .single($0) })
     }
 }

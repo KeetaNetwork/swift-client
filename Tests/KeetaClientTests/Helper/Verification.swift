@@ -4,8 +4,8 @@ import XCTest
 
 struct ExpectedBlockResult {
     let hash: String
-    let signature: [UInt8]
-    let version: Int
+    let signature: Block.Signature
+    let version: Block.Version
     let created: Date
     let network: NetworkID
     let signerPubKey: String
@@ -13,16 +13,16 @@ struct ExpectedBlockResult {
     let previous: String
     let isOpening: Bool
     
-    init(hash: String, signature: String, version: Int, created: String, network: NetworkID, signerPubKey: String, account: String? = nil, previous: String, isOpening: Bool) throws {
+    init(hash: String, signature: String, version: Block.Version, created: String, network: NetworkID, signerPubKey: String, account: String? = nil, previous: String, isOpening: Bool) throws {
         guard let created = Block.dateFormatter.date(from: created) else {
             throw NSError(domain: "Invalid date string: \(created)", code: 0)
         }
         self.init(hash: hash, signature: try signature.toBytes(), version: version, created: created, network: network, signerPubKey: signerPubKey, account: account, previous: previous, isOpening: isOpening)
     }
     
-    init(hash: String, signature: [UInt8], version: Int, created: Date, network: NetworkID, signerPubKey: String, account: String? = nil, previous: String, isOpening: Bool) {
+    init(hash: String, signature: [UInt8], version: Block.Version, created: Date, network: NetworkID, signerPubKey: String, account: String? = nil, previous: String, isOpening: Bool) {
         self.hash = hash.uppercased()
-        self.signature = signature
+        self.signature = .single(signature)
         self.version = version
         self.created = created
         self.network = network

@@ -33,13 +33,12 @@ extension HTTPClient {
     public func sendRequest<T: Decodable>(to endpoint: Endpoint, decoder: Decoder) async throws -> T {
         let data = try await sendRequest(to: endpoint)
         
-        #if DEBUG
-        print("RESPONSE: \(String(describing: String(data: data, encoding: .utf8)))")
-        #endif
-        
         do {
             return try decoder.decode(T.self, from: data)
         } catch let error {
+            #if DEBUG
+            print("RESPONSE: \(String(describing: String(data: data, encoding: .utf8)))")
+            #endif
             throw RequestError<Error>.decodingError(error: error, data: data)
         }
     }
@@ -63,13 +62,12 @@ extension HTTPClient {
             request.httpBody = try JSONSerialization.data(withJSONObject: body, options: [])
         }
         
-        #if DEBUG
-        print("REQUEST: \(request)")
-        #endif
-        
         let (data, response) = try await URLSession.shared.data(for: request)
             
         guard let response = response as? HTTPURLResponse else {
+            #if DEBUG
+            print("REQUEST: \(request)")
+            #endif
             throw RequestError<Error>.noResponse
         }
         
@@ -80,6 +78,7 @@ extension HTTPClient {
             throw RequestError<Error>.unauthorized
         default:
             #if DEBUG
+            print("REQUEST: \(request)")
             print("RESPONSE \(response.statusCode): \(String(describing: String(data: data, encoding: .utf8)))")
             #endif
             

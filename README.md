@@ -5,9 +5,6 @@
 
 Official Swift SDK to interact with the [Keeta Network](https://keeta.com/).
 
-> [!WARNING]  
-> These APIs are not considered stable and may change with any update. Specify a version using `exact:` to avoid breaking changes.
-
 ### Installation
 
 This package uses Swift Package Manager. To add it to your project using Xcode:
@@ -139,7 +136,7 @@ let consecutiveBlock = try BlockBuilder()
         .add(operation: SetInfoOperation(name: "Demo Account".uppercased()))
         .seal()
 
-// Blocks can be published together using either the KeetaClient or KeetaApi
+// Manually constructed blocks can be published using the KeetaApi. Please check the fees section for further details.
 ```
 
 ### KeetaClient
@@ -163,3 +160,23 @@ Interact with the network directly, specify which rep to talk to, recover accoun
 ```js
 let api = try KeetaApi(config: .create(for: .test))
 ```
+
+### Fees
+
+Representatives may charge a fee to issue permanent votes. Permanent votes are required to publish a block to the network. Fees are handled automatically when using the `KeetaClient`. When publishing blocks manually using the `KeetaApi`, an additional block to pay the fees has to be included using the `feeBlockBuilder` completion.
+
+**Publish a Block via API**
+```js
+let network: NetworkAlias = .main
+
+let api = try KeetaApi(network: network)
+
+// Use the `AccountBuilder` to create a 'senderAccount'
+// Use the `BlockBuilder` to construct a 'sendBlock'
+
+try await api.publish(blocks: [sendBlock]) { temporaryStaple in
+    // Compute the fee block, will be published together with the 'sendBlock'
+    try BlockBuilder.feeBlock(for: temporaryStaple, account: senderAccount, network: network)
+}
+```
+

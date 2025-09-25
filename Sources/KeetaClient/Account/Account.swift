@@ -43,11 +43,11 @@ public struct Account: Codable, Hashable {
     public let publicKeyAndType: PublicKeyAndType
     public let keyAlgorithm: KeyAlgorithm
     
-    var canSign: Bool {
+    public var canSign: Bool {
         keyPair.hasPrivateKey
     }
     
-    var isIdentifier: Bool {
+    public var isIdentifier: Bool {
         [.TOKEN, .NETWORK].contains(keyAlgorithm)
     }
     

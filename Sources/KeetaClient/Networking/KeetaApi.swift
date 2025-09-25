@@ -7,6 +7,7 @@ public enum KeetaApiError: Error {
     case clientRepresentativeNotFound(_ address: String)
     case noVotes(errors: [Error])
     case missingAtLeastOneRep
+    case feesRequiredButFeeBuilderMissing
     case blockMismatch
     case notPublished
 }
@@ -15,18 +16,31 @@ public final class KeetaApi: HTTPClient {
 
     public var preferredRep: ClientRepresentative
     public var reps: [ClientRepresentative]
+    public let networkId: NetworkID
+    public let baseToken: Account
     
     private let decoder: Decoder = JSONDecoder()
 
-    public convenience init(config: NetworkConfig) throws {
-        try self.init(reps: config.reps)
+    public convenience init(network: NetworkAlias) throws {
+        try self.init(config: .create(for: network))
     }
     
-    public init(reps: [ClientRepresentative], preferredRep: ClientRepresentative? = nil) throws {
+    public convenience init(config: NetworkConfig) throws {
+        try self.init(reps: config.reps, networkId: config.networkID, baseToken: config.baseToken)
+    }
+    
+    public init(
+        reps: [ClientRepresentative],
+        networkId: NetworkID,
+        baseToken: Account,
+        preferredRep: ClientRepresentative? = nil
+    ) throws {
         if reps.isEmpty { throw KeetaApiError.missingAtLeastOneRep }
         
         self.reps = reps
-        self.preferredRep = reps.preferred ?? reps[0]
+        self.preferredRep = preferredRep ?? reps.preferred ?? reps[0]
+        self.networkId = networkId
+        self.baseToken = baseToken
     }
     
     public func votes(for blocks: [Block], temporaryVotes: [Vote]? = nil) async throws -> [Vote] {
@@ -139,10 +153,28 @@ public final class KeetaApi: HTTPClient {
         }
     }
     
-    public func publish(blocks: [Block], networkAlias: NetworkAlias) async throws {
+    public func publish(blocks: [Block], account: Account) async throws {
+        try await publish(blocks: blocks) {
+            try BlockBuilder.feeBlock(for: $0, account: account, networkId: self.networkId, baseToken: self.baseToken)
+        }
+    }
+    
+    public func publish(blocks: [Block], feeBlockBuilder: ((VoteStaple) throws -> Block)?) async throws {
         let temporaryVotes = try await votes(for: blocks)
-        let permanentVotes = try await votes(for: blocks, temporaryVotes: temporaryVotes)
-        let voteStaple = try VoteStaple.create(from: permanentVotes, blocks: blocks)
+        
+        let blocksToPublish: [Block]
+        if temporaryVotes.requiresFees {
+            guard let feeBlockBuilder else {
+                throw KeetaApiError.feesRequiredButFeeBuilderMissing
+            }
+            let tempStaple = try VoteStaple.create(from: temporaryVotes, blocks: blocks)
+            blocksToPublish = blocks + [try feeBlockBuilder(tempStaple)]
+        } else {
+            blocksToPublish = blocks
+        }
+        
+        let permanentVotes = try await votes(for: blocksToPublish, temporaryVotes: temporaryVotes)
+        let voteStaple = try VoteStaple.create(from: permanentVotes, blocks: blocksToPublish)
         try await publish(voteStaple: voteStaple)
     }
     

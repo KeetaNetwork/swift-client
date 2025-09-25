@@ -25,68 +25,92 @@ class ApiTests: XCTestCase {
         XCTAssertTrue(balance.balances[config.baseToken.publicKeyString, default: 0] > 0)
     }
     
-    func test_recoverAccount() async throws {
-        let api = try createAPI()
-        
-        // Get temporary votes
-        let newRecipient = try AccountBuilder.new()
-        try await api.verify(account: newRecipient, head: nil, balance: nil)
-        
-        let send = try SendOperation(amount: BigInt(1), to: newRecipient, token: config.baseToken)
-        let senderBalance = try await api.balance(for: wellFundedAccount)
-        
-        let sendBlock = try BlockBuilder()
-            .start(from: senderBalance.currentHeadBlock, network: config.networkID)
-            .add(account: wellFundedAccount)
-            .add(operation: send)
-            .seal()
-        
-        let temporaryVotes = try await api.votes(for: [sendBlock])
-        
-        // Try to get new temporary votes for a different block
-        let anotherSendBlock = try BlockBuilder()
-            .start(from: senderBalance.currentHeadBlock, network: config.networkID)
-            .add(account: wellFundedAccount)
-            .add(operation: send)
-            .seal()
-        
-        do {
-            _ = try await api.votes(for: [anotherSendBlock])
-            XCTFail("Shouldn't receive votes for a conflicting block")
-            return
-        } catch KeetaApiError.noVotes(let errors) {
-            let error = try XCTUnwrap(errors.first)
+    func test_recoverAccounts() async throws {
+        for version in Block.Version.all {
+            let api = try createAPI()
             
-            if case RequestError<KeetaErrorResponse>.error(_, let error) = error {
-                XCTAssertEqual(error.type, .ledger)
-                XCTAssertEqual(error.code, .successorVoteExists)
-            } else {
+            // Fund new account, enough to cover rep fees
+            let newAccount = try AccountBuilder.new()
+            let initialBalance: BigInt = 11 // TODO: increase to 50_000_000 once fees are enabled
+            try await api.send(amount: initialBalance, from: wellFundedAccount, to: newAccount, config: config)
+            try await api.verify(account: newAccount, head: nil, balance: initialBalance)
+            
+            // Create new recipient
+            let newRecipient = try AccountBuilder.new()
+            try await api.verify(account: newRecipient, head: nil, balance: nil)
+            
+            // Get temporary votes for send block
+            let send = try SendOperation(amount: BigInt(1), to: newRecipient, token: config.baseToken)
+            let senderBalance = try await api.balance(for: newAccount)
+            XCTAssertNil(senderBalance.currentHeadBlock)
+            
+            let sendBlock = try BlockBuilder(version: version)
+                .start(from: senderBalance.currentHeadBlock, network: config.networkID)
+                .add(account: newAccount)
+                .add(operation: send)
+                .seal()
+            
+            let temporaryVotes = try await api.votes(for: [sendBlock])
+            
+            // Try to get new temporary votes for a different block
+            let anotherSendBlock = try BlockBuilder(version: version)
+                .start(from: senderBalance.currentHeadBlock, network: config.networkID)
+                .add(account: newAccount)
+                .add(operation: send)
+                .seal()
+            
+            do {
+                _ = try await api.votes(for: [anotherSendBlock])
+                XCTFail("Shouldn't receive votes for a conflicting \(version) block")
+                return
+            } catch KeetaApiError.noVotes(let errors) {
+                let error = try XCTUnwrap(errors.first)
+                
+                if case RequestError<KeetaErrorResponse>.error(_, let error) = error {
+                    XCTAssertEqual(error.type, .ledger)
+                    XCTAssertEqual(error.code, .successorVoteExists)
+                } else {
+                    XCTFail("Unknown error: \(error)")
+                }
+            } catch {
                 XCTFail("Unknown error: \(error)")
             }
-        } catch {
-            XCTFail("Unknown error: \(error)")
+            
+            // Recover temporary votes
+            let recoveredTemporaryVotes = try await api.recoverVotes(for: newAccount)
+            XCTAssertEqual(Set(temporaryVotes.map(\.id)), Set(recoveredTemporaryVotes.map(\.id)))
+            XCTAssertTrue(recoveredTemporaryVotes.allSatisfy { !$0.permanent })
+            
+            // Pay fees if needed
+            let blocksToPublish: [Block]
+            let totalFees: BigInt
+            if recoveredTemporaryVotes.requiresFees {
+                let recoveredStaple = try VoteStaple.create(from: recoveredTemporaryVotes, blocks: [sendBlock])
+                let fee = try BlockBuilder.feeBlock(for: recoveredStaple, account: newAccount, network: config)
+                blocksToPublish = [sendBlock, fee]
+                totalFees = recoveredStaple.totalFees
+            } else {
+                blocksToPublish = [sendBlock]
+                totalFees = 0
+            }
+            
+            // Get permanent votes using recovered temporary votes
+            let permanentVotes = try await api.votes(for: blocksToPublish, temporaryVotes: recoveredTemporaryVotes)
+            
+            // Recover permanent votes
+            let recoveredTemporaryAndPermanentVotes = try await api.recoverVotes(for: newAccount)
+            XCTAssertEqual(recoveredTemporaryAndPermanentVotes.count, temporaryVotes.count + permanentVotes.count)
+            let recoveredPermanentVotes = recoveredTemporaryAndPermanentVotes.filter { $0.permanent }
+            XCTAssertEqual(Set(permanentVotes.map(\.id)), Set(recoveredPermanentVotes.map(\.id)))
+            
+            // Publish pending block with recovered votes
+            let staple = try VoteStaple.create(from: recoveredPermanentVotes, blocks: blocksToPublish)
+            try await api.publish(voteStaple: staple)
+            
+            // Verify new head block
+            let expectedBalance = initialBalance - (send.amount + totalFees)
+            try await api.verify(account: newAccount, head: blocksToPublish.last?.hash, balance: expectedBalance)
         }
-        
-        // Recover temporary votes
-        let recoveredTemporaryVotes = try await api.recoverVotes(for: wellFundedAccount)
-        XCTAssertEqual(Set(temporaryVotes.map(\.id)), Set(recoveredTemporaryVotes.map(\.id)))
-        XCTAssertTrue(recoveredTemporaryVotes.allSatisfy { !$0.permanent })
-        
-        // Get permanent votes using recovered temporary votes
-        let permanentVotes = try await api.votes(for: [sendBlock], temporaryVotes: recoveredTemporaryVotes)
-        
-        // Recover permanent votes
-        let recoveredTemporaryAndPermanentVotes = try await api.recoverVotes(for: wellFundedAccount)
-        XCTAssertEqual(recoveredTemporaryAndPermanentVotes.count, temporaryVotes.count + permanentVotes.count)
-        let recoveredPermanentVotes = recoveredTemporaryAndPermanentVotes.filter { $0.permanent }
-        XCTAssertEqual(Set(permanentVotes.map(\.id)), Set(recoveredPermanentVotes.map(\.id)))
-        
-        // Publish pending block with recovered votes
-        let staple = try VoteStaple.create(from: recoveredPermanentVotes, blocks: [sendBlock])
-        try await api.publish(voteStaple: staple)
-        
-        // Verify new head block
-        try await api.verify(account: wellFundedAccount, head: sendBlock.hash)
     }
     
     func test_noPendingBlockToRecover() async throws {
@@ -115,11 +139,20 @@ class ApiTests: XCTestCase {
         XCTAssertEqual(temporaryVotes.count, config.reps.count, "Expected one temporary vote from each rep")
         XCTAssertTrue(temporaryVotes.allSatisfy { !$0.permanent }, "Expected all votes to be temporary:\n\(temporaryVotes)")
         
-        let permanentVotes = try await api.votes(for: [sendBlock], temporaryVotes: temporaryVotes)
+        let blocksToPublish: [Block]
+        if temporaryVotes.requiresFees {
+            let temporaryStaple = try VoteStaple.create(from: temporaryVotes, blocks: [sendBlock])
+            let fee = try BlockBuilder.feeBlock(for: temporaryStaple, account: wellFundedAccount, network: config)
+            blocksToPublish = [sendBlock, fee]
+        } else {
+            blocksToPublish = [sendBlock]
+        }
+        
+        let permanentVotes = try await api.votes(for: blocksToPublish, temporaryVotes: temporaryVotes)
         XCTAssertEqual(permanentVotes.count, config.reps.count, "Expected one permanent vote from each rep")
         XCTAssertTrue(permanentVotes.allSatisfy { $0.permanent }, "Expected all votes to be permanent:\n\(permanentVotes)")
         
-        let voteStaple = try VoteStaple.create(from: permanentVotes, blocks: [sendBlock])
+        let voteStaple = try VoteStaple.create(from: permanentVotes, blocks: blocksToPublish)
         try await api.publish(voteStaple: voteStaple)
         
         // Verify recipient's balance is updated
@@ -173,12 +206,12 @@ class ApiTests: XCTestCase {
             .seal()
         
         do {
-            try await api.publish(blocks: [needToReceiveBlock, sendBlock], networkAlias: config.networkAlias)
+            try await api.publish(blocks: [needToReceiveBlock, sendBlock], account: account1)
             XCTFail("Didn't expect this block order to be valid!")
             return
         } catch {}
         
-        try await api.publish(blocks: [sendBlock, needToReceiveBlock], networkAlias: config.networkAlias)
+        try await api.publish(blocks: [sendBlock, needToReceiveBlock], account: account1)
         
         // Verify balances
         try await api.verify(account: account1, head: needToReceiveBlock.hash, balance: 2)
@@ -213,7 +246,7 @@ class ApiTests: XCTestCase {
             .add(signer: accountWithCustomToken)
             .seal()
         
-        try await api.publish(blocks: [tokenCreationBlock, tokenMintBlock], networkAlias: config.networkAlias)
+        try await api.publish(blocks: [tokenCreationBlock, tokenMintBlock], account: accountWithCustomToken)
         
         let sendCustomToken = try SendOperation(amount: mint.amount, to: accountWithCustomToken, token: customToken)
         let tokenSendBlock = try BlockBuilder()
@@ -223,7 +256,7 @@ class ApiTests: XCTestCase {
             .add(signer: accountWithCustomToken)
             .seal()
         
-        try await api.publish(blocks: [tokenSendBlock], networkAlias: config.networkAlias)
+        try await api.publish(blocks: [tokenSendBlock], account: accountWithCustomToken)
         
         // Account with custom tokens proposes a swap: 1 custom token in exchange for 2 base token
         let receive = try ReceiveOperation(amount: 2, token: config.baseToken, from: accountWithBaseToken, exact: true)
@@ -248,7 +281,7 @@ class ApiTests: XCTestCase {
             .seal()
         
         let blocks = [accountWithBaseTokenSendBlock, needToReceiveBlock, accountWithCustomTokenSendBlock]
-        try await api.publish(blocks: blocks, networkAlias: config.networkAlias)
+        try await api.publish(blocks: blocks, account: accountWithCustomToken)
         
         // Verify balances
         let accountWithBaseTokenBalance = try await api.balance(for: accountWithBaseToken)
@@ -287,7 +320,7 @@ class ApiTests: XCTestCase {
             .add(operations: setInfo)
             .seal()
         
-        try await api.publish(blocks: [setInfoBlock], networkAlias: config.networkAlias)
+        try await api.publish(blocks: [setInfoBlock], account: newAccount)
         
         accountInfo = try await api.accountInfo(for: newAccount)
         XCTAssertEqual(accountInfo.name, setInfo.name)
@@ -318,7 +351,7 @@ class ApiTests: XCTestCase {
             .add(signer: tokenOwner)
             .seal()
         
-        try await api.publish(blocks: [tokenCreationBlock, tokenMintBlock], networkAlias: config.networkAlias)
+        try await api.publish(blocks: [tokenCreationBlock, tokenMintBlock], account: tokenOwner)
         
         var tokenBalance = try await api.balance(for: newToken)
         XCTAssertEqual(tokenBalance.balances.count, 1)
@@ -334,7 +367,7 @@ class ApiTests: XCTestCase {
             .add(signer: tokenOwner)
             .seal()
         
-        try await api.publish(blocks: [tokenBurnBlock], networkAlias: config.networkAlias)
+        try await api.publish(blocks: [tokenBurnBlock], account: tokenOwner)
         
         tokenBalance = try await api.balance(for: newToken)
         XCTAssertEqual(tokenBalance.balances.count, 1)
@@ -352,7 +385,7 @@ class ApiTests: XCTestCase {
             .add(signer: tokenOwner)
             .seal()
         
-        try await api.publish(blocks: [tokenSendBlock], networkAlias: config.networkAlias)
+        try await api.publish(blocks: [tokenSendBlock], account: tokenOwner)
         
         tokenBalance = try await api.balance(for: newToken)
         XCTAssertEqual(tokenBalance.balances.count, 1)
@@ -373,12 +406,12 @@ class ApiTests: XCTestCase {
             .add(operation: sendReturn)
             .seal()
      
-        try await api.publish(blocks: [returnTokensBlock], networkAlias: config.networkAlias)
+        try await api.publish(blocks: [returnTokensBlock], account: recipient)
     }
     
     // MARK: - Helper
 
     func createAPI() throws -> KeetaApi {
-        try KeetaApi(reps: config.reps)
+        try KeetaApi(config: config)
     }
 }

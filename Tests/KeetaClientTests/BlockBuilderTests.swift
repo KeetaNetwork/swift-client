@@ -6,43 +6,87 @@ final class BlockBuilderTests: XCTestCase {
     let seed = "2401D206735C20485347B9A622D94DE9B21F2F1450A77C42102237FA4077567D"
     let baseToken = try! AccountBuilder.create(fromPublicKey: "keeta_apawchjv3mp6odgesjluzgolzk6opwq3yzygmor2ojkkacjb4ra6anxxzwsti")
     
+    func test_constructBlockFromData() throws {
+        // generated using TS node v0.14.3
+        let encodedBlocks: [Block.Version: [String]] = [
+            .v1: ["MIIBbgIBAAIBAAUAGBMyMDIyMDYyNzIwMjMzNS4wNzZaBCIAAhV6sOsTVE8Vg2Nc+Nsu0x/p0CkgbhYBADkuyRKI1lOoBQAEIEOjdPNp96THWK9A4izhlm++gsE903bTNqU+PJGjvgoFMIHEoEwwSgQiAAJGuYUd+QGaTysWsDZ62+HQwJ43+EFjphc0eeRL6U3cjgIBCgQhA8FhHTXbH+cMxJJXTJnLyrzn2hvGcGY6OnJUoAkh5EHgoEwwSgQiAAJtFlRCN/EpEy0WshtvOHIBCeHsQ2PHy8arBrUPkxwtnAIBFAQhA8FhHTXbH+cMxJJXTJnLyrzn2hvGcGY6OnJUoAkh5EHgoSYwJAQiAAJtFlRCN/EpEy0WshtvOHIBCeHsQ2PHy8arBrUPkxwtnARAY9i6etYirZJwa9g+I2csRK84FbjL5aYvX1MiLp9Orj0IMyK+OMyCgJ8++ejjc6mBDVdwL8y+ZB9IqItnW0dLGg=="],
+            .v2: ["oYIBcDCCAWwCAQAYEzIwMjIwNjI3MjAyMzM1LjA3NloCAQAEIgACFXqw6xNUTxWDY1z42y7TH+nQKSBuFgEAOS7JEojWU6gFAAQgQ6N082n3pMdYr0DiLOGWb76CwT3TdtM2pT48kaO+CgUwgcSgTDBKBCIAAka5hR35AZpPKxawNnrb4dDAnjf4QWOmFzR55EvpTdyOAgEKBCEDwWEdNdsf5wzEkldMmcvKvOfaG8ZwZjo6clSgCSHkQeCgTDBKBCIAAm0WVEI38SkTLRayG284cgEJ4exDY8fLxqsGtQ+THC2cAgEUBCEDwWEdNdsf5wzEkldMmcvKvOfaG8ZwZjo6clSgCSHkQeChJjAkBCIAAm0WVEI38SkTLRayG284cgEJ4exDY8fLxqsGtQ+THC2cBEDYS5K7t/irrbOfhijdm58ZREBGCspYMx+9lhoqsornGSnoO9jzsivAjl4AUKrqwP61AqySBtNbhU9NZza+ioW6"]
+        ]
+        
+        let expectedHashes: [Block.Version: [String]] = [
+            .v1: ["FA9AF443879D12518A2D5A43E018BA72CB1BB8AED51DCED964A3B69B140C9E57"],
+            .v2: ["A8D628AB191BB9CB156E7B2EB34251060045B207D517E58E8CCD924A96123977"]
+        ]
+        
+        for version in Block.Version.all {
+            let blocks = try XCTUnwrap(encodedBlocks[version])
+            let expectedHashes = try XCTUnwrap(expectedHashes[version])
+            guard blocks.count == expectedHashes.count else {
+                XCTFail("Misconfiguration")
+                return
+            }
+            
+            for (index, base64) in blocks.enumerated() {
+                let data = try XCTUnwrap(Data(base64Encoded: base64))
+                let block = try Block(from: data)
+                XCTAssertEqual(block.hash, expectedHashes[index], "\(version)")
+            }
+        }
+    }
+    
     func test_createSealedBlocks() throws {
         let account1 = try AccountBuilder.create(fromSeed: seed, index: 0)
         let account2 = try AccountBuilder.create(fromSeed: seed, index: 1)
         let account3 = try AccountBuilder.create(fromSeed: seed, index: 2)
         
-        let created1 = try XCTUnwrap(Block.dateFormatter.date(from: "2022-06-27T20:23:35.076Z"))
+        let expectedHashes: [Block.Version: [String]] = [
+            .v1: [
+                // generated using TS node v0.10.6
+                "FA9AF443879D12518A2D5A43E018BA72CB1BB8AED51DCED964A3B69B140C9E57",
+                // generated using TS node v0.8.8
+                "D6FE2854DDB8645E2749949DD71FD73054C30FA2AC2D8917D21220F76F2C444C"
+            ],
+            .v2: [
+                // generated using TS node v0.14.3
+                "A8D628AB191BB9CB156E7B2EB34251060045B207D517E58E8CCD924A96123977",
+                "9B2268604FF9B040BEB9C7AC6AFA414CB8BD23ED57B077CAF42DE46659041D3D"
+            ]
+        ]
         
-        let finalBlock = try BlockBuilder()
-            .start(from: nil, network: 0)
-            .add(signer: account1)
-            .add(operation: SendOperation(amount: 10, to: account2, token: baseToken))
-            .add(operation: SendOperation(amount: 20, to: account3, token: baseToken))
-            .add(operation: SetRepOperation(to: account3))
-            .seal(created: created1)
-        
-        // generated using TS node v0.10.6
-        let expectedHash1 = "FA9AF443879D12518A2D5A43E018BA72CB1BB8AED51DCED964A3B69B140C9E57"
-        XCTAssertEqual(finalBlock.hash, expectedHash1)
-        XCTAssertTrue(finalBlock.opening)
-        
-        let publicAccount1 = try AccountBuilder.create(fromPublicKey: account1.publicKeyString)
-        let hashBytes = try finalBlock.hash.toBytes()
-        let verified = try publicAccount1.verify(data: Data(hashBytes), signature: finalBlock.signature)
-        XCTAssertTrue(verified)
-        
-        let created2 = try XCTUnwrap(Block.dateFormatter.date(from: "2022-06-28T20:24:39.076Z"))
-        
-        let subsequentBlock = try BlockBuilder()
-            .start(from: finalBlock.hash, network: 0)
-            .add(signer: account1)
-            .add(operation: SendOperation(amount: 10, to: account2, token: baseToken, external: "test"))
-            .seal(created: created2)
-        
-        // generated using TS node v0.8.8
-        let expectedHash2 = "D6FE2854DDB8645E2749949DD71FD73054C30FA2AC2D8917D21220F76F2C444C"
-        XCTAssertEqual(subsequentBlock.hash, expectedHash2)
-        XCTAssertFalse(subsequentBlock.opening)
+        for version in Block.Version.all {
+            if version == .v1 { continue }
+            let created1 = try XCTUnwrap(Block.dateFormatter.date(from: "2022-06-27T20:23:35.076Z"))
+            let finalBlock = try BlockBuilder(version: version)
+                .start(from: nil, network: 0)
+                .add(signer: account1)
+                .add(operation: SendOperation(amount: 10, to: account2, token: baseToken))
+                .add(operation: SendOperation(amount: 20, to: account3, token: baseToken))
+                .add(operation: SetRepOperation(to: account3))
+                .seal(created: created1)
+            
+            let expectedHashes = try XCTUnwrap(expectedHashes[version], "Missing block hashes for version: \(version)")
+            XCTAssertEqual(finalBlock.hash, expectedHashes[0])
+            XCTAssertTrue(finalBlock.opening)
+            
+            let publicAccount1 = try AccountBuilder.create(fromPublicKey: account1.publicKeyString)
+            let hashBytes = try finalBlock.hash.toBytes()
+            switch finalBlock.signature {
+            case .single(let signature):
+                let verified = try publicAccount1.verify(data: Data(hashBytes), signature: signature)
+                XCTAssertTrue(verified)
+            case .multi:
+                XCTFail("Multi-signatures not implemented")
+            }
+            
+            let created2 = try XCTUnwrap(Block.dateFormatter.date(from: "2022-06-28T20:24:39.076Z"))
+            let subsequentBlock = try BlockBuilder(version: version)
+                .start(from: finalBlock.hash, network: 0)
+                .add(signer: account1)
+                .add(operation: SendOperation(amount: 10, to: account2, token: baseToken, external: "test"))
+                .seal(created: created2)
+            XCTAssertEqual(subsequentBlock.hash, expectedHashes[1])
+            XCTAssertFalse(subsequentBlock.opening)
+        }
     }
     
     func test_createBlockWithSigner() throws {
@@ -51,7 +95,7 @@ final class BlockBuilderTests: XCTestCase {
         let publicAccount = try AccountBuilder.create(fromPublicKey: publicKey)
         let created = try XCTUnwrap(Block.dateFormatter.date(from: "2025-01-01T16:23:35.076Z"))
         
-        let block = try BlockBuilder()
+        let block = try BlockBuilder(version: .v1)
             .start(from: nil, network: 31)
             .add(signer: fullAccount)
             .add(account: publicAccount)
@@ -64,8 +108,13 @@ final class BlockBuilderTests: XCTestCase {
         XCTAssertTrue(block.opening)
         
         let hashBytes = try block.hash.toBytes()
-        let verified = try fullAccount.verify(data: Data(hashBytes), signature: block.signature)
-        XCTAssertTrue(verified)
+        switch block.signature {
+        case .single(let signature):
+            let verified = try fullAccount.verify(data: Data(hashBytes), signature: signature)
+            XCTAssertTrue(verified)
+        case .multi:
+            XCTFail("Multi-signatures not implemented")
+        }
     }
     
     func test_createBlockWithSignature() throws {
@@ -87,7 +136,7 @@ final class BlockBuilderTests: XCTestCase {
         
         let created = try XCTUnwrap(Block.dateFormatter.date(from: "2022-06-27T20:23:35.076Z"))
         
-        let finalBlock = try BlockBuilder()
+        let finalBlock = try BlockBuilder(version: .v1)
             .start(from: nil, network: 0)
             .add(signer: account1)
             .add(operation: SendOperation(amount: 10, to: account2, token: baseToken))
@@ -129,10 +178,6 @@ final class BlockBuilderTests: XCTestCase {
     func test_sealingBlockErrors() throws {
         let account = try AccountBuilder.create(fromSeed: seed, index: 0)
         let sendOperation = try SendOperation(amount: 10, to: account, token: baseToken)
-        
-        captureError(BlockBuilderError.unsupportedBlockVersion, failure: "Should not be possible to create blocks with unsupported version") {
-            _ = try BlockBuilder(version: 2)
-        }
         
         captureError(BlockBuilderError.insufficentDataToSignBlock, failure: "Should not be possible to sign empty block data.") {
             _ = try BlockBuilder().seal()

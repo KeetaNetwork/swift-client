@@ -13,7 +13,7 @@ final class VoteStapleTests: XCTestCase {
         let expectedBlock: ExpectedBlockResult = try .init(
             hash: "63253433CB01143DEA1B1460F8161341248BA6B5E2B8B9C29B0DC8031BD35A28",
             signature: "5114ADAE90B3E481022CC590EA4EA1D96A51A8B98DFFEDB7C6B3BB933440024401748033587210E9BC7F7BC4DFEC74237F6112125ED8B4E45A7D0941EFC85432",
-            version: 1,
+            version: .v1,
             created: "2025-06-15T01:56:56.519Z",
             network: 0x54455354,
             signerPubKey: "keeta_aabils3qpviuj7oul3umti25u45m2bmw47zwndskkneh66cwalcahifxvtvajla",

@@ -21,4 +21,6 @@ public enum OID: String {
     case domainComponent = "0.9.2342.19200300.100.1.25"
     case emailAddress = "1.2.840.113549.1.9.1"
     case userId = "0.9.2342.19200300.100.1.1"
+    
+    case fees = "1.3.6.1.4.1.62675.0.1.0"
 }

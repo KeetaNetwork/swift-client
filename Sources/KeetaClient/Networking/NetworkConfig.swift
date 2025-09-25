@@ -2,20 +2,23 @@ public struct NetworkConfig {
     public let networkAlias: NetworkAlias
     public let networkID: NetworkID
     public let baseToken: Account
-    public let fountain: Account
+    public let fountain: Account?
     public let reps: [ClientRepresentative]
     
     public static func create(for network: NetworkAlias) throws -> Self {
         let networkID: NetworkID = switch network {
         case .test: 0x54455354 // 1413829460
+        case .main: 0x5382 // 21378
         }
         
         let baseTokenPubKey = switch network {
         case .test: "keeta_anyiff4v34alvumupagmdyosydeq24lc4def5mrpmmyhx3j6vj2uucckeqn52"
+        case .main: "keeta_anqdilpazdekdu4acw65fj7smltcp26wbrildkqtszqvverljpwpezmd44ssg"
         }
         
-        let fountainSeed = switch network {
+        let fountainSeed: String? = switch network {
         case .test: "0000000000000000000000000000000000000000000000000000000000000000"
+        case .main: nil
         }
         
         let numberOfReps = 4
@@ -24,7 +27,7 @@ public struct NetworkConfig {
             networkAlias: network,
             networkID: networkID,
             baseToken: try AccountBuilder.create(fromPublicKey: baseTokenPubKey),
-            fountain: try AccountBuilder.create(fromSeed: fountainSeed, index: 0xffffffff),
+            fountain: try fountainSeed.map { try AccountBuilder.create(fromSeed: $0, index: 0xffffffff) },
             reps: (1...numberOfReps).map {
                 .init(
                     address: network.keetaRepAddress(number: $0),

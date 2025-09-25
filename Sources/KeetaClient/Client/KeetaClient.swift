@@ -2,25 +2,30 @@ import BigInt
 
 public enum KeetaNetwork {
     case test
+    case main
 }
 
 public enum KeetaClientError: Error {
     case missingAccount
     case invalidTokenAccount
+    case insufficientBalanceToCoverNetworkFees
 }
 
 public final class KeetaClient {
     
     public let api: KeetaApi
     public let config: NetworkConfig
+    public let version: Block.Version
     public let account: Account?
     
-    public init(network: KeetaNetwork, account: Account? = nil) {
-        let config: NetworkConfig = switch network {
-        case .test: try! .create(for: .test)
+    public init(network: KeetaNetwork, version: Block.Version = .latest, account: Account? = nil) {
+        let alias: NetworkAlias = switch network {
+        case .test: .test
+        case .main: .main
         }
         
-        self.config = config
+        self.config = try! .create(for: alias)
+        self.version = version
         self.account = account
         
         api = try! .init(config: config)
@@ -79,17 +84,25 @@ public final class KeetaClient {
             throw KeetaClientError.invalidTokenAccount
         }
         
-        let previousBlockHash = try await api.balance(for: fromAccount).currentHeadBlock
+        let balance = try await api.balance(for: fromAccount)
         let send = try SendOperation(amount: amount, to: toAccount, token: token, external: memo)
         
-        let sendBlock = try BlockBuilder()
-            .start(from: previousBlockHash, network: config.networkID)
+        let sendBlock = try blockBuilder()
+            .start(from: balance.currentHeadBlock, network: config.networkID)
             .add(account: fromAccount)
             .add(operation: send)
             .add(signer: signer)
             .seal()
         
-        try await api.publish(blocks: [sendBlock], networkAlias: config.networkAlias)
+        try await api.publish(blocks: [sendBlock]) {
+            let fees = $0.totalFees(baseToken: self.config.baseToken)
+            
+            guard balance.canCover(fees: fees) else {
+                throw KeetaClientError.insufficientBalanceToCoverNetworkFees
+            }
+            
+            return try BlockBuilder.feeBlock(for: $0, account: fromAccount, network: self.config)
+        }
         
         return sendBlock.hash
     }
@@ -181,14 +194,14 @@ public final class KeetaClient {
         let receive = try ReceiveOperation(amount: ask.amount, token: ask.token, from: otherAccount, exact: true)
         
         let accountHeadblock = try await api.balance(for: account).currentHeadBlock
-        let needToReceiveBlock = try BlockBuilder()
+        let needToReceiveBlock = try blockBuilder()
             .start(from: accountHeadblock, network: config.networkID)
             .add(account: account)
             .add(operation: receive)
             .seal()
         
         let accountTokenSend = try SendOperation(amount: offer.amount, to: otherAccount, token: offer.token)
-        let accountTokenSendBlock = try BlockBuilder()
+        let accountTokenSendBlock = try blockBuilder()
             .start(from: needToReceiveBlock.hash, network: config.networkID)
             .add(account: account)
             .add(operation: accountTokenSend)
@@ -196,14 +209,16 @@ public final class KeetaClient {
         
         let otherAccountHeadblock = try await api.balance(for: otherAccount).currentHeadBlock
         let otherAccountTokenSend = try SendOperation(amount: ask.amount, to: account, token: ask.token)
-        let otherAccountTokenSendBlock = try BlockBuilder()
+        let otherAccountTokenSendBlock = try blockBuilder()
             .start(from: otherAccountHeadblock, network: config.networkID)
             .add(account: otherAccount)
             .add(operation: otherAccountTokenSend)
             .seal()
         
         let blocks = [otherAccountTokenSendBlock, needToReceiveBlock, accountTokenSendBlock]
-        try await api.publish(blocks: blocks, networkAlias: config.networkAlias)
+        try await api.publish(blocks: blocks) {
+            try BlockBuilder.feeBlock(for: $0, account: account, network: self.config)
+        }
     }
     
     // MARK: Token Management
@@ -221,7 +236,7 @@ public final class KeetaClient {
         let token = try account.generateIdentifier()
         
         let create = CreateIdentifierOperation(identifier: token)
-        let tokenCreationBlock = try BlockBuilder()
+        let tokenCreationBlock = try blockBuilder()
             .start(from: nil, network: config.networkID)
             .add(signer: account)
             .add(operation: create)
@@ -229,15 +244,23 @@ public final class KeetaClient {
         
         let mint = TokenAdminSupplyOperation(amount: supply, method: .add)
         let info = SetInfoOperation(name: name, defaultPermission: .init(baseFlag: .ACCESS))
-        let tokenMintBlock = try BlockBuilder()
+        let tokenMintBlock = try blockBuilder()
             .start(from: nil, network: config.networkID)
             .add(account: token)
             .add(operations: mint, info)
             .add(signer: account)
             .seal()
         
-        try await api.publish(blocks: [tokenCreationBlock, tokenMintBlock], networkAlias: config.networkAlias)
+        try await api.publish(blocks: [tokenCreationBlock, tokenMintBlock]) {
+            try BlockBuilder.feeBlock(for: $0, account: account, network: self.config)
+        }
         
         return token
+    }
+    
+    // MARK: Helper
+    
+    private func blockBuilder() -> BlockBuilder {
+        .init(version: version)
     }
 }

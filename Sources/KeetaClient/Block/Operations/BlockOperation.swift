@@ -16,10 +16,7 @@ public extension BlockOperation {
     }
     
     func tagged() throws -> ASN1 {
-        let data = try asn1Values().toData()
-        let contextSpecificBase: UInt8 = 0xA0
-        let tag = contextSpecificBase + operationType.rawValue
-        return .tagged(tag, data)
+        try TaggedValue.contextSpecific(tag: operationType.rawValue, asn1Values()).asn1
     }
 }
 

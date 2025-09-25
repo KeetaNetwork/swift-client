@@ -14,7 +14,10 @@ extension KeetaApi {
             .add(operation: send)
             .seal()
         
-        try await publish(blocks: [sendBlock], networkAlias: config.networkAlias)
+        try await publish(
+            blocks: [sendBlock],
+            feeBlockBuilder: { try BlockBuilder.feeBlock(for: $0, account: fromAccount, network: config) }
+        )
         
         return sendBlock.hash
     }
