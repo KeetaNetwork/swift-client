@@ -44,7 +44,15 @@ public struct Account: Codable, Hashable {
     public let keyAlgorithm: KeyAlgorithm
     
     public var canSign: Bool {
-        keyPair.hasPrivateKey
+        guard keyPair.hasPrivateKey else { return false }
+        
+        // Not all key pair implementation support signing e.g. IdentifierKeyPair
+        do {
+            _ = try keyAlgorithm.utils
+            return true
+        } catch {
+            return false
+        }
     }
     
     public var isIdentifier: Bool {

@@ -25,7 +25,7 @@ extension XCTestCase {
             }
         } catch let error {
             if expected != nil {
-                XCTFail("Invalid error: \(error)")
+                XCTFail("Invalid error: \(error)", file: file, line: callLine)
             }
         }
     }

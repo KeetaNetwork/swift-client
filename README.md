@@ -31,34 +31,35 @@ print("Public Key:", account.publicKeyString) // e.g., keeta_aabpd...csrqxi
 
 // 2. Initialize an account specific client for the test network
 let client = KeetaClient(network: .test, account: account)
-// Alternatively: let client = KeetaClient(network: .test)
 
-// 3. Create a new token with an initial supply
+// 3. Get KTA test tokens from the faucet: https://faucet.test.keeta.com
+
+// 4. Create a new token with an initial supply
 let newToken = try await client.createToken(name: "DEMO", supply: BigInt(100))
 
-// 4. Send some of minted tokens to the generated account
+// 5. Send some of minted tokens to the generated account
 // ℹ️ Token accounts can't sign transactions — use the owner (account) as signer
 try await client.send(amount: BigInt(10), from: newToken, to: account, token: newToken, signer: account)
 
-// 5. Check the account's balance
+// 6. Check the account's balance
 let accountBalance = try await client.balance()
 print("Account Balance:", accountBalance.balances[newToken.publicKeyString] ?? "0") // 10
 
-// 6. Create a second account from the same seed with a different index
+// 7. Create a second account from the same seed with a different index
 let recipient = try AccountBuilder.create(fromSeed: seed, index: 1)
 
-// 7. Send tokens from the funded account to the new recipient
+// 8. Send tokens from the funded account to the new recipient
 try await client.send(amount: BigInt(5), to: recipient, token: newToken)
 
-// 8.Check the recipient's balance
+// 9.Check the recipient's balance
 let recipientBalance = try await client.balance(of: recipient)
 print("Recipient Balance:", recipientBalance.balances[newToken.publicKeyString] ?? "0") // 5
 
-// 9. List account transactions
+// 10. List account transactions
 let transactions = try await client.transactions()
 print("Transactions:", transactions) // [ -5 tokens sent, +10 tokens received ]
 
-// 10. Token swap between the two accounts
+// 11. Token swap between the two accounts
 try await client.swap(
     with: recipient,
     offer: .init(amount: BigInt(1), token: newToken),

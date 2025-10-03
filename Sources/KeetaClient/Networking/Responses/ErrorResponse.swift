@@ -16,6 +16,7 @@ public enum ErrorCode: String, Decodable {
     case ledgerReceiveNotMet = "LEDGER_RECEIVE_NOT_MET"
     case ledgerInvalidBalance = "LEDGER_INVALID_BALANCE"
     case ledgerInvalidPermissions = "LEDGER_INVALID_PERMISSIONS"
+    case ledgerPreviousAlreadyUsed = "LEDGER_PREVIOUS_ALREADY_USED"
     case ledgerNotEmpty = "LEDGER_NOT_EMPTY"
     case ledgerOther = "LEDGER_OTHER"
     case blockOnlyTokenOperation = "BLOCK_ONLY_TOKEN_OP"

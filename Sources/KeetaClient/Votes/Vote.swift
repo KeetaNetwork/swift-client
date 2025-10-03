@@ -346,10 +346,8 @@ public struct Vote {
             }
         }
         
-        if let fee {
-            if permanent {
-                throw VoteError.permanentVoteCanNotHaveFees
-            }
+        if fee != nil && permanent {
+            throw VoteError.permanentVoteCanNotHaveFees
         }
         
         // Construct vote
@@ -410,6 +408,10 @@ public struct Vote {
 }
 
 public extension [Vote] {
+    var fees: [Fee] {
+        compactMap { $0.fee }
+    }
+    
     var requiresFees: Bool {
         contains { $0.fee != nil }
     }

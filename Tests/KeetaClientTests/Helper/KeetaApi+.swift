@@ -14,23 +14,29 @@ extension KeetaApi {
             .add(operation: send)
             .seal()
         
-        try await publish(
+        let result = try await publish(
             blocks: [sendBlock],
-            feeBlockBuilder: { try BlockBuilder.feeBlock(for: $0, account: fromAccount, network: config) }
+            feeBlockBuilder: { try await BlockBuilder.feeBlock(for: $0, account: fromAccount, api: self) }
         )
         
-        return sendBlock.hash
+        return result.staple.blocks.last!.hash
     }
     
     @discardableResult
-    func verify(account: Account, head: String?, balance: BigInt? = nil)  async throws -> AccountBalance {
+    func verify(
+        account: Account,
+        head: String?,
+        balance: BigInt? = nil,
+        callLine: UInt = #line,
+        file: StaticString = #file
+    )  async throws -> AccountBalance {
         let result = try await self.balance(for: account)
         
-        XCTAssertEqual(result.account, account.publicKeyString)
+        XCTAssertEqual(result.account, account.publicKeyString, file: file, line: callLine)
         if let balance = balance {
-            XCTAssertEqual(result.balances.first?.value, balance)
+            XCTAssertEqual(result.balances.first?.value, balance, file: file, line: callLine)
         }
-        XCTAssertEqual(result.currentHeadBlock, head)
+        XCTAssertEqual(result.currentHeadBlock, head, file: file, line: callLine)
 
         return result
     }

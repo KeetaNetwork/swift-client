@@ -153,29 +153,48 @@ public final class KeetaApi: HTTPClient {
         }
     }
     
-    public func publish(blocks: [Block], account: Account) async throws {
+    @discardableResult
+    public func publish(blocks: [Block], feeAccount: Account) async throws -> PublishResult {
         try await publish(blocks: blocks) {
-            try BlockBuilder.feeBlock(for: $0, account: account, networkId: self.networkId, baseToken: self.baseToken)
+            try await BlockBuilder.feeBlock(for: $0, account: feeAccount, api: self)
         }
     }
     
-    public func publish(blocks: [Block], feeBlockBuilder: ((VoteStaple) throws -> Block)?) async throws {
+    @discardableResult
+    public func publish(blocks: [Block], feeBlockBuilder: ((VoteStaple) async throws -> Block)?) async throws -> PublishResult {
         let temporaryVotes = try await votes(for: blocks)
         
         let blocksToPublish: [Block]
+        let fees: [PublishResult.PaidFee]
+        let feeBlockHash: String?
         if temporaryVotes.requiresFees {
             guard let feeBlockBuilder else {
                 throw KeetaApiError.feesRequiredButFeeBuilderMissing
             }
             let tempStaple = try VoteStaple.create(from: temporaryVotes, blocks: blocks)
-            blocksToPublish = blocks + [try feeBlockBuilder(tempStaple)]
+            let feeBlock = try await feeBlockBuilder(tempStaple)
+            
+            blocksToPublish = blocks + [feeBlock]
+            fees = try feeBlock.rawData.operations
+                .compactMap { $0 as? SendOperation }
+                .map {
+                    .init(
+                        amount: $0.amount,
+                        to: try Account.publicKeyString(from: $0.to),
+                        token: try Account.publicKeyString(from: $0.token)
+                    )
+                }
+            feeBlockHash = feeBlock.hash
         } else {
             blocksToPublish = blocks
+            fees = []
+            feeBlockHash = nil
         }
         
         let permanentVotes = try await votes(for: blocksToPublish, temporaryVotes: temporaryVotes)
         let voteStaple = try VoteStaple.create(from: permanentVotes, blocks: blocksToPublish)
         try await publish(voteStaple: voteStaple)
+        return .init(staple: voteStaple, fees: fees, feeBlockHash: feeBlockHash)
     }
     
     public func balance(for account: Account, replaceReps: Bool = false) async throws -> AccountBalance {

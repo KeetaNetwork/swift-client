@@ -1,3 +1,4 @@
+import Foundation
 import BigInt
 
 public enum KeetaNetwork {
@@ -8,7 +9,9 @@ public enum KeetaNetwork {
 public enum KeetaClientError: Error {
     case missingAccount
     case invalidTokenAccount
-    case insufficientBalanceToCoverNetworkFees
+    case feeAccountMissing
+    case noTokenAccount
+    case noTokenSupply
 }
 
 public final class KeetaClient {
@@ -17,8 +20,13 @@ public final class KeetaClient {
     public let config: NetworkConfig
     public let version: Block.Version
     public let account: Account?
+    public var feeAccount: Account?
     
-    public init(network: KeetaNetwork, version: Block.Version = .latest, account: Account? = nil) {
+    public convenience init(network: KeetaNetwork, version: Block.Version = .latest, account: Account, usedToPayFees: Bool = true) {
+        self.init(network: network, version: version, account: account, feeAccount: usedToPayFees ? account : nil)
+    }
+
+    public init(network: KeetaNetwork, version: Block.Version = .latest, account: Account? = nil, feeAccount: Account? = nil) {
         let alias: NetworkAlias = switch network {
         case .test: .test
         case .main: .main
@@ -27,6 +35,7 @@ public final class KeetaClient {
         self.config = try! .create(for: alias)
         self.version = version
         self.account = account
+        self.feeAccount = feeAccount
         
         api = try! .init(config: config)
     }
@@ -34,9 +43,8 @@ public final class KeetaClient {
     // MARK: Send
     
     @discardableResult
-    public func send(amount: BigInt, to toPubKeyAccount: String, signer: String? = nil, memo: String? = nil) async throws -> String {
+    public func send(amount: BigInt, to toPubKeyAccount: String, signer: Account? = nil, memo: String? = nil) async throws -> String {
         let toAccount = try AccountBuilder.create(fromPublicKey: toPubKeyAccount)
-        let signer = try signer.map { try AccountBuilder.create(fromPublicKey: $0) }
         return try await send(amount: amount, to: toAccount, signer: signer, memo: memo)
     }
     
@@ -47,10 +55,9 @@ public final class KeetaClient {
     }
     
     @discardableResult
-    public func send(amount: BigInt, to toAccount: Account, token tokenPubKey: String, signer: String? = nil, memo: String? = nil) async throws -> String {
+    public func send(amount: BigInt, to toAccount: Account, token tokenPubKey: String, signer: Account? = nil, memo: String? = nil) async throws -> String {
         guard let account else { throw KeetaClientError.missingAccount }
         let token = try AccountBuilder.create(fromPublicKey: tokenPubKey)
-        let signer = try signer.map { try AccountBuilder.create(fromPublicKey: $0) }
         return try await send(amount: amount, from: account, to: toAccount, token: token, signer: signer, memo: memo)
     }
     
@@ -72,14 +79,22 @@ public final class KeetaClient {
     }
     
     @discardableResult
-    public func send(amount: BigInt, from fromAccount: Account, to toPubKeyAccount: String, token tokenPubKey: String, memo: String? = nil) async throws -> String {
+    public func send(amount: BigInt, from fromAccount: Account, to toPubKeyAccount: String, token tokenPubKey: String, signer: Account? = nil, memo: String? = nil) async throws -> String {
         let toAccount = try AccountBuilder.create(fromPublicKey: toPubKeyAccount)
         let token = try AccountBuilder.create(fromPublicKey: tokenPubKey)
-        return try await send(amount: amount, from: fromAccount, to: toAccount, token: token, memo: memo)
+        return try await send(amount: amount, from: fromAccount, to: toAccount, token: token, signer: signer, memo: memo)
     }
     
     @discardableResult
-    public func send(amount: BigInt, from fromAccount: Account, to toAccount: Account, token: Account, signer: Account? = nil, memo: String? = nil) async throws -> String {
+    public func send(
+        amount: BigInt,
+        from fromAccount: Account,
+        to toAccount: Account,
+        token: Account,
+        signer: Account? = nil,
+        feeAccount: Account? = nil,
+        memo: String? = nil
+    ) async throws -> String {
         guard token.keyAlgorithm == .TOKEN else {
             throw KeetaClientError.invalidTokenAccount
         }
@@ -95,13 +110,20 @@ public final class KeetaClient {
             .seal()
         
         try await api.publish(blocks: [sendBlock]) {
-            let fees = $0.totalFees(baseToken: self.config.baseToken)
-            
-            guard balance.canCover(fees: fees) else {
-                throw KeetaClientError.insufficientBalanceToCoverNetworkFees
+            let accountToPayFees: Account
+            if let feeAccount = feeAccount ?? self.feeAccount,
+               feeAccount.publicKeyString != fromAccount.publicKeyString {
+                accountToPayFees = feeAccount
+            } else {
+                let fees = $0.totalFees(baseToken: self.config.baseToken)
+                
+                guard balance.canCover(fees: fees) else {
+                    throw BlockBuilderError.insufficientBalanceToCoverNetworkFees
+                }
+                
+                accountToPayFees = fromAccount
             }
-            
-            return try BlockBuilder.feeBlock(for: $0, account: fromAccount, network: self.config)
+            return try await BlockBuilder.feeBlock(for: $0, account: accountToPayFees, network: self.config)
         }
         
         return sendBlock.hash
@@ -149,12 +171,16 @@ public final class KeetaClient {
                         let toAccount = try Account(publicKeyAndType: send.to)
                         let isComing = toAccount.publicKeyString == account.publicKeyString
                         
+                        // ignore outgoing send operations as they aren't effecting the account's chain
+                        if !isComing && block.rawData.account.publicKeyString != account.publicKeyString { continue }
+                        
                         transactions.append(
                             Transaction(
                                 amount: send.amount,
                                 from: isComing ? block.rawData.account : account,
                                 to: isComing ? account : toAccount,
                                 token: try Account(publicKeyAndType: send.token),
+                                isNetworkFee: block.rawData.purpose == .fee,
                                 created: block.rawData.created,
                                 memo: send.external
                             )
@@ -170,6 +196,7 @@ public final class KeetaClient {
                                 from: isOutgoing ? account : fromAccount,
                                 to: isOutgoing ? fromAccount : account,
                                 token: try Account(publicKeyAndType: receive.token),
+                                isNetworkFee: false,
                                 created: block.rawData.created,
                                 memo: nil
                             )
@@ -185,12 +212,17 @@ public final class KeetaClient {
     
     // MARK: Swap
     
-    public func swap(with otherAccount: Account, offer: Proposal, ask: Proposal) async throws {
+    public func swap(with otherAccount: Account, offer: Proposal, ask: Proposal, feeAccount: Account? = nil) async throws {
         guard let account else { throw KeetaClientError.missingAccount }
-        try await swap(account: account, offer: offer, ask: ask, from: otherAccount)
+        try await swap(account: account, offer: offer, ask: ask, from: otherAccount, feeAccount: feeAccount)
     }
     
-    public func swap(account: Account, offer: Proposal, ask: Proposal, from otherAccount: Account) async throws {
+    @discardableResult
+    public func swap(account: Account, offer: Proposal, ask: Proposal, from otherAccount: Account, feeAccount: Account? = nil) async throws -> PublishResult {
+        guard let feeAccount = feeAccount ?? self.feeAccount else {
+            throw KeetaClientError.feeAccountMissing
+        }
+        
         let receive = try ReceiveOperation(amount: ask.amount, token: ask.token, from: otherAccount, exact: true)
         
         let accountHeadblock = try await api.balance(for: account).currentHeadBlock
@@ -216,23 +248,34 @@ public final class KeetaClient {
             .seal()
         
         let blocks = [otherAccountTokenSendBlock, needToReceiveBlock, accountTokenSendBlock]
-        try await api.publish(blocks: blocks) {
-            try BlockBuilder.feeBlock(for: $0, account: account, network: self.config)
+        return try await api.publish(blocks: blocks) {
+            try await BlockBuilder.feeBlock(for: $0, account: feeAccount, network: self.config)
         }
     }
     
     // MARK: Token Management
     
-    public func createToken(name: String, supply: Double) async throws -> Account {
-        try await createToken(name: name, supply: BigInt(supply))
+    public func createToken(
+        name: String, supply: Double, description: String = "", feeAccount: Account? = nil
+    ) async throws -> Account {
+        try await createToken(name: name, supply: BigInt(supply), feeAccount: feeAccount)
     }
     
-    public func createToken(name: String, supply: BigInt) async throws -> Account {
+    public func createToken(
+        name: String, supply: BigInt, feeAccount: Account? = nil
+    ) async throws -> Account {
         guard let account else { throw KeetaClientError.missingAccount }
-        return try await createToken(for: account, name: name, supply: supply)
+        return try await createToken(
+            for: account, name: name, supply: supply, feeAccount: feeAccount
+        )
     }
     
-    public func createToken(for account: Account, name: String, supply: BigInt) async throws -> Account {
+    public func createToken(
+        for account: Account,
+        name: String,
+        supply: BigInt,
+        feeAccount: Account? = nil
+    ) async throws -> Account {
         let token = try account.generateIdentifier()
         
         let create = CreateIdentifierOperation(identifier: token)
@@ -252,7 +295,7 @@ public final class KeetaClient {
             .seal()
         
         try await api.publish(blocks: [tokenCreationBlock, tokenMintBlock]) {
-            try BlockBuilder.feeBlock(for: $0, account: account, network: self.config)
+            try await BlockBuilder.feeBlock(for: $0, account: feeAccount ?? account, api: self.api)
         }
         
         return token

@@ -31,7 +31,7 @@ class ApiTests: XCTestCase {
             
             // Fund new account, enough to cover rep fees
             let newAccount = try AccountBuilder.new()
-            let initialBalance: BigInt = 11 // TODO: increase to 50_000_000 once fees are enabled
+            let initialBalance: BigInt = 50_000_000
             try await api.send(amount: initialBalance, from: wellFundedAccount, to: newAccount, config: config)
             try await api.verify(account: newAccount, head: nil, balance: initialBalance)
             
@@ -86,7 +86,9 @@ class ApiTests: XCTestCase {
             let totalFees: BigInt
             if recoveredTemporaryVotes.requiresFees {
                 let recoveredStaple = try VoteStaple.create(from: recoveredTemporaryVotes, blocks: [sendBlock])
-                let fee = try BlockBuilder.feeBlock(for: recoveredStaple, account: newAccount, network: config)
+                let fee = try BlockBuilder.feeBlock(
+                    for: recoveredStaple, account: newAccount, network: config, previous: sendBlock.hash
+                )
                 blocksToPublish = [sendBlock, fee]
                 totalFees = recoveredStaple.totalFees
             } else {
@@ -142,7 +144,9 @@ class ApiTests: XCTestCase {
         let blocksToPublish: [Block]
         if temporaryVotes.requiresFees {
             let temporaryStaple = try VoteStaple.create(from: temporaryVotes, blocks: [sendBlock])
-            let fee = try BlockBuilder.feeBlock(for: temporaryStaple, account: wellFundedAccount, network: config)
+            let fee = try BlockBuilder.feeBlock(
+                for: temporaryStaple, account: wellFundedAccount, network: config, previous: sendBlock.hash
+            )
             blocksToPublish = [sendBlock, fee]
         } else {
             blocksToPublish = [sendBlock]
@@ -187,8 +191,8 @@ class ApiTests: XCTestCase {
         let account2 = try AccountBuilder.new()
         
         // Fund account 2
-        try await api.send(amount: 3, from: wellFundedAccount, to: account2, config: config)
-        try await api.verify(account: account2, head: nil, balance: 3)
+        try await api.send(amount: 900_000, from: wellFundedAccount, to: account2, config: config)
+        try await api.verify(account: account2, head: nil, balance: 900_000)
         
         // Account 1 requests to receive token from account 2
         let receive = try ReceiveOperation(amount: 2, token: config.baseToken, from: account2, exact: true)
@@ -198,6 +202,7 @@ class ApiTests: XCTestCase {
             .add(operation: receive)
             .seal()
         
+        // Account 2 publishes both his send block and the receive block
         let send = try SendOperation(amount: 2, to: account1, token: config.baseToken)
         let sendBlock = try BlockBuilder()
             .start(from: nil, network: config.networkID)
@@ -206,29 +211,37 @@ class ApiTests: XCTestCase {
             .seal()
         
         do {
-            try await api.publish(blocks: [needToReceiveBlock, sendBlock], account: account1)
+            try await api.publish(blocks: [needToReceiveBlock, sendBlock], feeAccount: account2)
             XCTFail("Didn't expect this block order to be valid!")
             return
         } catch {}
         
-        try await api.publish(blocks: [sendBlock, needToReceiveBlock], account: account1)
+        let result = try await api.publish(blocks: [sendBlock, needToReceiveBlock], feeAccount: account2)
+        let baseTokenPubKey = config.baseToken.publicKeyString
+        XCTAssertTrue(result.fees.allSatisfy({ $0.token == baseTokenPubKey }))
+        XCTAssertEqual(Array(result.feeAmounts.keys), [baseTokenPubKey])
         
         // Verify balances
         try await api.verify(account: account1, head: needToReceiveBlock.hash, balance: 2)
-        try await api.verify(account: account2, head: sendBlock.hash, balance: 1)
+        
+        let feesPaid = result.feeAmounts.values.reduce(0) { $0 + $1 }
+        try await api.verify(account: account2, head: result.feeBlockHash, balance: 900_000 - (2 + feesPaid))
     }
     
     func test_swapTokens() async throws {
         let api = try createAPI()
         
-        // Fund account 1 with base token
+        // Fund account 1 with enough base token for the trade
         let accountWithBaseToken = try AccountBuilder.new()
         let account1InitialBalance = BigInt(3)
         try await api.send(amount: account1InitialBalance, from: wellFundedAccount, to: accountWithBaseToken, config: config)
         try await api.verify(account: accountWithBaseToken, head: nil, balance: account1InitialBalance)
         
-        // Fund account 2 with new custom token
+        // Fund account 2 with base token to cover token creation tx fee
         let accountWithCustomToken = try AccountBuilder.new()
+        try await api.send(amount: 1_500_000, from: wellFundedAccount, to: accountWithCustomToken, config: config)
+        
+        // Create new token and fund account 2
         let customToken = try accountWithCustomToken.generateIdentifier()
         
         let create = CreateIdentifierOperation(identifier: customToken)
@@ -246,7 +259,7 @@ class ApiTests: XCTestCase {
             .add(signer: accountWithCustomToken)
             .seal()
         
-        try await api.publish(blocks: [tokenCreationBlock, tokenMintBlock], account: accountWithCustomToken)
+        try await api.publish(blocks: [tokenCreationBlock, tokenMintBlock], feeAccount: accountWithCustomToken)
         
         let sendCustomToken = try SendOperation(amount: mint.amount, to: accountWithCustomToken, token: customToken)
         let tokenSendBlock = try BlockBuilder()
@@ -256,12 +269,12 @@ class ApiTests: XCTestCase {
             .add(signer: accountWithCustomToken)
             .seal()
         
-        try await api.publish(blocks: [tokenSendBlock], account: accountWithCustomToken)
+        var result = try await api.publish(blocks: [tokenSendBlock], feeAccount: accountWithCustomToken)
         
         // Account with custom tokens proposes a swap: 1 custom token in exchange for 2 base token
         let receive = try ReceiveOperation(amount: 2, token: config.baseToken, from: accountWithBaseToken, exact: true)
         let needToReceiveBlock = try BlockBuilder()
-            .start(from: tokenCreationBlock.hash, network: config.networkID)
+            .start(from: result.feeBlockHash ?? tokenCreationBlock.hash, network: config.networkID)
             .add(account: accountWithCustomToken)
             .add(operation: receive)
             .seal()
@@ -281,7 +294,7 @@ class ApiTests: XCTestCase {
             .seal()
         
         let blocks = [accountWithBaseTokenSendBlock, needToReceiveBlock, accountWithCustomTokenSendBlock]
-        try await api.publish(blocks: blocks, account: accountWithCustomToken)
+        result = try await api.publish(blocks: blocks, feeAccount: accountWithCustomToken)
         
         // Verify balances
         let accountWithBaseTokenBalance = try await api.balance(for: accountWithBaseToken)
@@ -292,16 +305,19 @@ class ApiTests: XCTestCase {
         
         let accountWithCustomTokenBalance = try await api.balance(for: accountWithCustomToken)
         XCTAssertEqual(accountWithCustomTokenBalance.balances.count, 2, "\(accountWithCustomTokenBalance)")
-        XCTAssertEqual(accountWithCustomTokenBalance.balances[config.baseToken.publicKeyString], receive.amount)
+        XCTAssertEqual(accountWithCustomTokenBalance.balances[config.baseToken.publicKeyString], 50_002)
         XCTAssertEqual(accountWithCustomTokenBalance.balances[customToken.publicKeyString], mint.amount - accountWithCustomTokenSend.amount)
-        XCTAssertEqual(accountWithCustomTokenBalance.currentHeadBlock, accountWithCustomTokenSendBlock.hash)
+        XCTAssertEqual(accountWithCustomTokenBalance.currentHeadBlock, result.feeBlockHash ?? accountWithCustomTokenSendBlock.hash)
     }
     
     func test_AccountInfo() async throws {
         let api = try createAPI()
         
         let newAccount = try AccountBuilder.new()
-        
+
+        // Fund account to pay network fee
+        try await api.send(amount: 900_000, from: wellFundedAccount, to: newAccount, config: config)
+
         var accountInfo = try await api.accountInfo(for: newAccount)
         XCTAssertTrue(accountInfo.name.isEmpty)
         XCTAssertTrue(accountInfo.description.isEmpty)
@@ -320,7 +336,7 @@ class ApiTests: XCTestCase {
             .add(operations: setInfo)
             .seal()
         
-        try await api.publish(blocks: [setInfoBlock], account: newAccount)
+        try await api.publish(blocks: [setInfoBlock], feeAccount: newAccount)
         
         accountInfo = try await api.accountInfo(for: newAccount)
         XCTAssertEqual(accountInfo.name, setInfo.name)
@@ -332,7 +348,10 @@ class ApiTests: XCTestCase {
     func test_createToken() async throws {
         let api = try createAPI()
         
+        // Fund token owner's account to cover token creation tx fee
         let tokenOwner = try AccountBuilder.new()
+        try await api.send(amount: 1_800_000, from: wellFundedAccount, to: tokenOwner, config: config)
+        
         let newToken = try tokenOwner.generateIdentifier()
         
         let create = CreateIdentifierOperation(identifier: newToken)
@@ -351,7 +370,7 @@ class ApiTests: XCTestCase {
             .add(signer: tokenOwner)
             .seal()
         
-        try await api.publish(blocks: [tokenCreationBlock, tokenMintBlock], account: tokenOwner)
+        try await api.publish(blocks: [tokenCreationBlock, tokenMintBlock], feeAccount: tokenOwner)
         
         var tokenBalance = try await api.balance(for: newToken)
         XCTAssertEqual(tokenBalance.balances.count, 1)
@@ -367,7 +386,7 @@ class ApiTests: XCTestCase {
             .add(signer: tokenOwner)
             .seal()
         
-        try await api.publish(blocks: [tokenBurnBlock], account: tokenOwner)
+        try await api.publish(blocks: [tokenBurnBlock], feeAccount: tokenOwner)
         
         tokenBalance = try await api.balance(for: newToken)
         XCTAssertEqual(tokenBalance.balances.count, 1)
@@ -385,7 +404,7 @@ class ApiTests: XCTestCase {
             .add(signer: tokenOwner)
             .seal()
         
-        try await api.publish(blocks: [tokenSendBlock], account: tokenOwner)
+        try await api.publish(blocks: [tokenSendBlock], feeAccount: tokenOwner)
         
         tokenBalance = try await api.balance(for: newToken)
         XCTAssertEqual(tokenBalance.balances.count, 1)
@@ -397,6 +416,9 @@ class ApiTests: XCTestCase {
         XCTAssertEqual(recipientBalance.balances[newToken.publicKeyString], send.amount)
         XCTAssertNil(recipientBalance.currentHeadBlock)
         
+        // Add additional tokens to recipient to cover network fees
+        try await api.send(amount: 900_000, from: wellFundedAccount, to: recipient, config: config)
+        
         // Recipient returns some tokens
         let sendReturn = try SendOperation(amount: BigInt(2), to: tokenOwner, token: newToken)
         
@@ -406,7 +428,7 @@ class ApiTests: XCTestCase {
             .add(operation: sendReturn)
             .seal()
      
-        try await api.publish(blocks: [returnTokensBlock], account: recipient)
+        try await api.publish(blocks: [returnTokensBlock], feeAccount: recipient)
     }
     
     // MARK: - Helper
