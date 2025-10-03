@@ -256,17 +256,17 @@ public final class KeetaClient {
     // MARK: Token Management
     
     public func createToken(
-        name: String, supply: Double, description: String = "", feeAccount: Account? = nil
+        name: String, supply: Double, decimals: Int = 9, description: String = "", feeAccount: Account? = nil
     ) async throws -> Account {
-        try await createToken(name: name, supply: BigInt(supply), feeAccount: feeAccount)
+        try await createToken(name: name, supply: BigInt(supply), decimals: decimals, description: description, feeAccount: feeAccount)
     }
     
     public func createToken(
-        name: String, supply: BigInt, feeAccount: Account? = nil
+        name: String, supply: BigInt, decimals: Int = 9, description: String = "", feeAccount: Account? = nil
     ) async throws -> Account {
         guard let account else { throw KeetaClientError.missingAccount }
         return try await createToken(
-            for: account, name: name, supply: supply, feeAccount: feeAccount
+            for: account, name: name, supply: supply, decimals: decimals, description: description, feeAccount: feeAccount
         )
     }
     
@@ -274,6 +274,8 @@ public final class KeetaClient {
         for account: Account,
         name: String,
         supply: BigInt,
+        decimals: Int = 9,
+        description: String = "",
         feeAccount: Account? = nil
     ) async throws -> Account {
         let token = try account.generateIdentifier()
@@ -286,7 +288,15 @@ public final class KeetaClient {
             .seal()
         
         let mint = TokenAdminSupplyOperation(amount: supply, method: .add)
-        let info = SetInfoOperation(name: name, defaultPermission: .init(baseFlag: .ACCESS))
+        
+        // Token Meta Data
+        let info = SetInfoOperation(
+            name: name,
+            description: description,
+            metaData: try MetaData(decimalPlaces: decimals).btoa(),
+            defaultPermission: .init(baseFlag: .ACCESS)
+        )
+
         let tokenMintBlock = try blockBuilder()
             .start(from: nil, network: config.networkID)
             .add(account: token)
@@ -299,6 +309,38 @@ public final class KeetaClient {
         }
         
         return token
+    }
+    
+    public func tokenInfo() async throws -> TokenInfo {
+        guard let account else { throw KeetaClientError.missingAccount }
+        return try await tokenInfo(for: account)
+    }
+    
+    public func tokenInfo(for pubKeyAccount: String) async throws -> TokenInfo {
+        let account = try AccountBuilder.create(fromPublicKey: pubKeyAccount)
+        return try await tokenInfo(for: account)
+    }
+    
+    public func tokenInfo(for account: Account) async throws -> TokenInfo {
+        guard account.keyAlgorithm == .TOKEN else {
+            throw KeetaClientError.noTokenAccount
+        }
+        
+        let accountInfo = try await api.accountInfo(for: account)
+        
+        // Tokens without supply or decimal places meta data are considered invalid
+        let metaData = try MetaData.create(from: accountInfo.metadata)
+        
+        guard let supply = accountInfo.supply else {
+            throw KeetaClientError.noTokenSupply
+        }
+        
+        return TokenInfo(
+            name: accountInfo.name,
+            description: accountInfo.description.isEmpty ? nil : accountInfo.description,
+            supply: Double(supply),
+            decimalPlaces: metaData.decimalPlaces
+        )
     }
     
     // MARK: Helper

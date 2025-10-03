@@ -143,6 +143,18 @@ final class KeetaClientTests: XCTestCase {
         XCTAssertEqual(account2Balance.balances[token.publicKeyString], 1)
     }
     
+    func test_baseTokenMetaData() async throws {
+        let client = KeetaClient(network: .test)
+        let baseToken = try NetworkConfig.create(for: .test).baseToken
+        
+        let info = try await client.tokenInfo(for: baseToken)
+        
+        XCTAssertEqual(info.name, "KTA")
+        XCTAssertEqual(info.description?.isEmpty, false)
+        XCTAssertTrue(info.supply > 1_000_000_000)
+        XCTAssertEqual(info.decimalPlaces, 9)
+    }
+    
     func test_createToken() async throws {
         let account = try AccountBuilder.new()
         
@@ -152,8 +164,13 @@ final class KeetaClientTests: XCTestCase {
         let client = KeetaClient(network: .test, account: account)
         
         let supply = BigInt(100)
-        let token = try await client.createToken(name: "TEST", supply: supply)
+        let token = try await client.createToken(name: "TEST", supply: supply, decimals: 7, description: "Automated Swift Test")
         
+        let info = try await client.tokenInfo(for: token)
+        XCTAssertEqual(info.name, "TEST")
+        XCTAssertEqual(info.description, "Automated Swift Test")
+        XCTAssertEqual(info.supply, 100)
+        XCTAssertEqual(info.decimalPlaces, 7)
         
         var tokenBalance = try await client.balance(of: token)
         XCTAssertEqual(tokenBalance.balances[token.publicKeyString], supply)
