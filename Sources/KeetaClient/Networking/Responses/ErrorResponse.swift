@@ -19,8 +19,11 @@ public enum ErrorCode: String, Decodable {
     case ledgerPreviousAlreadyUsed = "LEDGER_PREVIOUS_ALREADY_USED"
     case ledgerNotEmpty = "LEDGER_NOT_EMPTY"
     case ledgerOther = "LEDGER_OTHER"
+    case ledgerInsufficientVotingWeight = "LEDGER_INSUFFICIENT_VOTING_WEIGHT"
+    case ledgerIdempotentKeyAlreadyExists = "LEDGER_IDEMPOTENT_KEY_EXISTS"
     case blockOnlyTokenOperation = "BLOCK_ONLY_TOKEN_OP"
     case blockNoTokenOperation = "BLOCK_NO_TOKEN_OP"
     case blockFieldInvalid = "BLOCK_GENERAL_FIELD_INVALID"
+    case blockInvalidIdentifier = "BLOCK_IDENTIFIER_INVALID"
     case missingRequiredFeeBlock = "LEDGER_MISSING_REQUIRED_FEE_BLOCK"
 }

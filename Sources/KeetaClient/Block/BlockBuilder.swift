@@ -14,6 +14,7 @@ public final class BlockBuilder {
     
     internal var version: Block.Version
     internal var purpose: Block.Purpose
+    internal var idempotent: String?
     internal var previous: String?
     internal var network: NetworkID?
     internal var subnet: SubnetID?
@@ -117,6 +118,10 @@ public final class BlockBuilder {
             .seal()
     }
     
+    public static func idempotentKey() -> String {
+        try! UUID().uuidString.idempotent()
+    }
+    
     public init(version: Block.Version = .latest, purpose: Block.Purpose = .generic) {
         self.version = version
         self.purpose = purpose
@@ -132,6 +137,12 @@ public final class BlockBuilder {
     
     public func add(account: Account) -> BlockBuilder {
         self.account = account
+        
+        return self
+    }
+    
+    public func add(idempotent: String?) -> BlockBuilder {
+        self.idempotent = idempotent
         
         return self
     }
@@ -197,6 +208,7 @@ public final class BlockBuilder {
         let rawBlock = RawBlockData(
             version: version,
             purpose: purpose,
+            idempotent: idempotent,
             previous: previousHash,
             network: network,
             subnet: subnet,

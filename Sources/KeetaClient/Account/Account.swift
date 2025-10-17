@@ -78,7 +78,7 @@ public struct Account: Codable, Hashable {
         return try keyPair.verify(data: data, signature: signature, using: verifier)
     }
     
-    public func generateIdentifier(type: KeyAlgorithm = .TOKEN) throws -> Account {
+    public func generateIdentifier(index: Int = 0, previous: String? = nil, type: KeyAlgorithm = .TOKEN) throws -> Account {
         if isIdentifier {
             guard keyAlgorithm == .NETWORK else {
                 throw AccountError.invalidIdentifierAccount
@@ -88,12 +88,10 @@ public struct Account: Codable, Hashable {
             }
         }
         
-        let accountOpeningHash = try Block.accountOpeningHash(for: self)
-        
-        let blockHash = try accountOpeningHash.toBytes()
+        let blockHash = try (previous ?? Block.accountOpeningHash(for: self)).toBytes()
         let seed: String = Hash.create(from: publicKeyAndType + blockHash)
         
-        return try AccountBuilder.create(fromSeed: seed, index: 0, algorithm: type)
+        return try AccountBuilder.create(fromSeed: seed, index: index, algorithm: type)
     }
     
     private func prepare(data: Data, options: SigningOptions) throws -> [UInt8] {

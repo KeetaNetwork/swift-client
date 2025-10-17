@@ -8,7 +8,9 @@ public enum KeetaApiError: Error {
     case noVotes(errors: [Error])
     case missingAtLeastOneRep
     case feesRequiredButFeeBuilderMissing
-    case blockMismatch
+    case blockAccountMismatch
+    case blockHashMismatch
+    case noPendingBlock(errors: [Error])
     case notPublished
 }
 
@@ -43,57 +45,81 @@ public final class KeetaApi: HTTPClient {
         self.baseToken = baseToken
     }
     
-    public func votes(for blocks: [Block], temporaryVotes: [Vote]? = nil) async throws -> [Vote] {
-        let repUrls: Set<String>
+    public func voteQuotes(for blocks: [Block]) async throws -> [VoteQuote] {
+        let requests = try KeetaEndpoint.voteQuote(for: blocks, repBaseUrls: Set(reps.map(\.apiUrl)))
+        let responses: [VoteQuoteResponse] = try await TaskGroup.load(requests) { try await self.sendRequest(to: $0) }
+        return try responses.map { try VoteQuote.create(from: $0.quote.binary) }
+    }
+    
+    public enum VoteType {
+        case temporary(quotes: [VoteQuote]? = nil)
+        case permanent(temporaryVotes: [Vote])
         
-        // Determine reps to ask for votes
-        if let temporaryVotes, !temporaryVotes.isEmpty {
-            repUrls = .init(try temporaryVotes.map { vote in
+        var isPermanent: Bool {
+            if case .permanent = self { true } else { false }
+        }
+    }
+    
+    @available(*, deprecated, message: "Use votes(for blocks: [Block], type: VoteType) method instead.")
+    public func votes(for blocks: [Block], temporaryVotes: [Vote]? = nil) async throws -> [Vote] {
+        let type: VoteType = if let temporaryVotes {
+            .permanent(temporaryVotes: temporaryVotes)
+        } else {
+            .temporary(quotes: nil)
+        }
+        return try await votes(for: blocks, type: type)
+    }
+    
+    public func votes(for blocks: [Block], type: VoteType) async throws -> [Vote] {
+        let requests: [Endpoint]
+        let repsInfo = Dictionary(uniqueKeysWithValues: reps.map({ ($0.address, $0.apiUrl) }))
+        
+        switch type {
+        case .temporary(let quotes):
+            let quotesInfo = Dictionary(uniqueKeysWithValues: quotes?.map({ ($0.issuer.publicKeyString, $0) }) ?? [])
+            requests = try KeetaEndpoint.temporaryVotes(for: blocks, quotes: quotesInfo, from: repsInfo)
+        case .permanent(let temporaryVotes):
+            // Determine reps to ask for votes
+            let repUrls = Set(try temporaryVotes.map { vote in
                 guard let rep = reps.first(where: { $0.address == vote.issuer.publicKeyString }) else {
                     throw KeetaApiError.clientRepresentativeNotFound(vote.issuer.publicKeyString)
                 }
                 return rep.apiUrl
             })
-        } else {
-            repUrls = .init(reps.map(\.apiUrl))
+            requests = try KeetaEndpoint.permanentVotes(for: blocks, temporaryVotes: temporaryVotes, from: repUrls)
         }
         
         // Request votes
-        let requests = try KeetaEndpoint.votes(for: blocks, temporaryVotes: temporaryVotes, from: repUrls)
         var errors = [Error]()
         
-        return try await withThrowingTaskGroup(of: VoteResponse?.self) { group in
-            for request in requests {
-                group.addTask {
-                    do {
-                        return try await self.sendRequest(to: request)
-                    } catch {
-                        if temporaryVotes?.isEmpty == false {
-                            // a permanent vote is required for each temporary vote
+        let votes: [Vote] = try await TaskGroup.load(requests) { request in
+            do {
+                let result: VoteResponse = try await self.sendRequest(to: request)
+                return try Vote.create(from: result.vote.binary)
+            } catch {
+                if type.isPermanent {
+                    // a permanent vote is required for each temporary vote
+                    throw error
+                } else {
+                    if let knownError = error as? RequestError<KeetaErrorResponse>,
+                        case .error(_, let keetaError) = knownError  {
+                        if keetaError.code == .successorVoteExists {
+                            // rep has a vote for a previous block
                             throw error
-                        } else {
-                            // silently skip reps that can't provide a temporary vote
-                            errors.append(error)
-                            return nil
                         }
                     }
+                    
+                    // silently skip reps that can't provide a temporary vote
+                    errors.append(error)
+                    return nil
                 }
             }
-            
-            var results: [Vote] = []
-            for try await result in group {
-                if let result {
-                    let vote = try Vote.create(from: result.vote.binary)
-                    results.append(vote)
-                }
-            }
-            
-            guard !results.isEmpty else {
-                throw KeetaApiError.noVotes(errors: errors)
-            }
-            
-            return results
+        }.compactMap { $0 }
+        
+        guard !votes.isEmpty else {
+            throw KeetaApiError.noVotes(errors: errors)
         }
+        return votes
     }
     
     public func publish(voteStaple: VoteStaple, toAll: Bool = false) async throws {
@@ -124,20 +150,64 @@ public final class KeetaApi: HTTPClient {
         }
     }
     
+    public func pendingBlock(for account: Account) async throws -> Block? {
+        let requests = KeetaEndpoint.pendingBlock(for: account, from: .init(reps.map(\.apiUrl)))
+        
+        var errors = [Error]()
+        
+        var hashCounts = [String: Int]()
+        var blocksWithHashes = [String: Block]()
+        
+        _ = try await TaskGroup.load(requests) {
+            let response: PendingBlockResponse = try await self.sendRequest(to: $0)
+            
+            guard account.publicKeyString == response.account else {
+                throw KeetaApiError.blockAccountMismatch
+            }
+            
+            guard let blockData = response.block else { return }
+            
+            let block = try Block.create(from: blockData.binary)
+            
+            guard block.hash == blockData.hash else {
+                throw KeetaApiError.blockHashMismatch
+            }
+            hashCounts[blockData.hash, default: 0] += 1
+            blocksWithHashes[blockData.hash] = block
+        }
+        
+        guard !blocksWithHashes.isEmpty else {
+            if errors.isEmpty {
+                return nil // no pending block
+            } else {
+                throw KeetaApiError.noPendingBlock(errors: errors)
+            }
+        }
+        
+        // Return the block that is repeated on the most reps or the first block
+        guard let mostCommonHash = hashCounts.max(by: { $0.value < $1.value })?.key else {
+            throw KeetaApiError.noPendingBlock(errors: [NSError(domain: "Most common hash not found", code: 0)])
+        }
+        return blocksWithHashes[mostCommonHash]
+    }
+    
     public func recoverVotes(for account: Account) async throws -> [Vote] {
         let repUrl = preferredRep.apiUrl
         let pendingBlockRequest = KeetaEndpoint.pendingBlock(for: account, baseUrl: repUrl)
         let pendingBlockResponse: PendingBlockResponse = try await sendRequest(to: pendingBlockRequest)
         
         guard account.publicKeyString == pendingBlockResponse.account else {
-            throw KeetaApiError.blockMismatch
+            throw KeetaApiError.blockAccountMismatch
         }
         
         guard let block = pendingBlockResponse.block else {
             return [] // no pending block to recover
         }
-        
-        let requests = KeetaEndpoint.vote(for: block.hash, side: .side, repBaseUrls: .init(reps.map(\.apiUrl)))
+        return try await recoverVotes(for: block.hash)
+    }
+    
+    public func recoverVotes(for blockHash: String) async throws -> [Vote] {
+        let requests = KeetaEndpoint.vote(for: blockHash, side: .side, repBaseUrls: .init(reps.map(\.apiUrl)))
         
         return try await withThrowingTaskGroup(of: BlockVoteResponse.self) { group in
             for request in requests {
@@ -161,9 +231,21 @@ public final class KeetaApi: HTTPClient {
     }
     
     @discardableResult
-    public func publish(blocks: [Block], feeBlockBuilder: ((VoteStaple) async throws -> Block)?) async throws -> PublishResult {
-        let temporaryVotes = try await votes(for: blocks)
-        
+    public func publish(
+        blocks: [Block],
+        quotes: [VoteQuote]? = nil,
+        feeBlockBuilder: ((VoteStaple) async throws -> Block)?
+    ) async throws -> PublishResult {
+        let temporaryVotes = try await votes(for: blocks, type: .temporary(quotes: quotes))
+        return try await publish(blocks: blocks, temporaryVotes: temporaryVotes, feeBlockBuilder: feeBlockBuilder)
+    }
+    
+    @discardableResult
+    public func publish(
+        blocks: [Block],
+        temporaryVotes: [Vote],
+        feeBlockBuilder: ((VoteStaple) async throws -> Block)?
+    ) async throws -> PublishResult {
         let blocksToPublish: [Block]
         let fees: [PublishResult.PaidFee]
         let feeBlockHash: String?
@@ -191,10 +273,32 @@ public final class KeetaApi: HTTPClient {
             feeBlockHash = nil
         }
         
-        let permanentVotes = try await votes(for: blocksToPublish, temporaryVotes: temporaryVotes)
+        let permanentVotes = try await votes(for: blocksToPublish, type: .permanent(temporaryVotes: temporaryVotes))
         let voteStaple = try VoteStaple.create(from: permanentVotes, blocks: blocksToPublish)
         try await publish(voteStaple: voteStaple)
         return .init(staple: voteStaple, fees: fees, feeBlockHash: feeBlockHash)
+    }
+    
+    public func block(for hash: String, side: LedgerSide? = nil) async throws -> Block {
+        let repUrl = preferredRep.apiUrl
+        let endpoint = KeetaEndpoint.block(for: hash, side: side, baseUrl: repUrl)
+        let response: BlockResponse = try await sendRequest(to: endpoint)
+        let block = try Block.create(from: response.block.binary)
+        if let expectedBlockHash = response.blockhash, expectedBlockHash != block.hash {
+            throw KeetaApiError.blockHashMismatch
+        }
+        return block
+    }
+    
+    public func block(for account: Account, idempotent: String, side: LedgerSide = .main) async throws -> Block {
+        let repUrl = preferredRep.apiUrl
+        let endpoint = KeetaEndpoint.block(for: account, idempotent: idempotent, side: side, baseUrl: repUrl)
+        let response: BlockResponse = try await sendRequest(to: endpoint)
+        let block = try Block.create(from: response.block.binary)
+        if let expectedBlockHash = response.blockhash, expectedBlockHash != block.hash {
+            throw KeetaApiError.blockHashMismatch
+        }
+        return block
     }
     
     public func balance(for account: Account, replaceReps: Bool = false) async throws -> AccountBalance {
@@ -203,15 +307,15 @@ public final class KeetaApi: HTTPClient {
         let repUrl = preferredRep.apiUrl
         let result: AccountStateResponse = try await sendRequest(to: KeetaEndpoint.accountInfo(of: account, baseUrl: repUrl))
 
-        var balances = [String: BigInt]()
+        var rawBalances = [String: BigInt]()
         for result in result.balances {
             guard let balance = BigInt(hex: result.balance) else {
                 throw KeetaApiError.invalidBalanceValue(result.balance)
             }
-            balances[result.token] = balance
+            rawBalances[result.token] = balance
         }
         
-        return .init(account: result.account, balances: balances, currentHeadBlock: result.currentHeadBlock)
+        return .init(account: result.account, rawBalances: rawBalances, currentHeadBlock: result.currentHeadBlock)
     }
     
     @discardableResult

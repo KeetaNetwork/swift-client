@@ -41,6 +41,19 @@ public struct ReceiveOperation: BlockOperation {
     
     public init(
         amount: BigInt,
+        tokenPubKey: String,
+        fromPubKey: String,
+        exact: Bool,
+        forwardPubKey: String? = nil
+    ) throws {
+        let token = try AccountBuilder.create(fromPublicKey: tokenPubKey)
+        let from = try AccountBuilder.create(fromPublicKey: fromPubKey)
+        let forward = try forwardPubKey.map { try AccountBuilder.create(fromPublicKey: $0) }
+        try self.init(amount: amount, token: token, from: from, exact: exact, forward: forward)
+    }
+    
+    public init(
+        amount: BigInt,
         token: Account,
         from: Account,
         exact: Bool,

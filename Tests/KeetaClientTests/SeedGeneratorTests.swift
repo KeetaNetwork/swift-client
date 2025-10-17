@@ -14,12 +14,23 @@ final class SeedGeneratorTests: XCTestCase {
         XCTAssertEqual(seed, recoveredSeed)
     }
     
-    func test_seedFromAnyPhrase() throws {
+    func test_seedFromPhrase() throws {
         // generated using node v0.10.6
-        let phrase = "this is the example length for a sufficient passphrase to be set secured"
-        let expectedSeed = "f4844098340a279dc09f7f6286081a9c92a518797634905e0e146bbaf708f9f3"
-        let seed = try SeedGenerator.from(phrase: phrase)
-        XCTAssertEqual(seed, expectedSeed)
+        let validInput = [
+            (
+                "this is the example length for a sufficient passphrase to be set secured",
+                "f4844098340a279dc09f7f6286081a9c92a518797634905e0e146bbaf708f9f3"
+            ),
+            (
+                "one one one one one one one one one one one one one one one one one one one one",
+                "281918a051553c41c79e2aab60a4566c0abeb5ade5a62a0ee08d0253e9171349"
+            )
+        ]
+        
+        for (phrase, expectedSeed) in validInput {
+            let seed = try SeedGenerator.from(phrase: phrase)
+            XCTAssertEqual(seed, expectedSeed, "Seed mismatch for phrase: \(phrase)")
+        }
         
         captureError(
             SeedGeneratorError.weakPassphrase(count: 44, required: 60),

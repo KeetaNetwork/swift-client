@@ -222,4 +222,32 @@ final class BlockBuilderTests: XCTestCase {
                 .seal()
         }
     }
+    
+    func test_parseBlockV2() throws {
+        let block = try Block.create(from: "oYIBcDCCAWwCAQAYEzIwMjUxMDExMDQ1MTMxLjM0NFoCAQAEIgACFXqw6xNUTxWDY1z42y7TH+nQKSBuFgEAOS7JEojWU6gFAAQgQ6N082n3pMdYr0DiLOGWb76CwT3TdtM2pT48kaO+CgUwgcSgTDBKBCIAAka5hR35AZpPKxawNnrb4dDAnjf4QWOmFzR55EvpTdyOAgEKBCEDwWEdNdsf5wzEkldMmcvKvOfaG8ZwZjo6clSgCSHkQeCgTDBKBCIAAm0WVEI38SkTLRayG284cgEJ4exDY8fLxqsGtQ+THC2cAgEUBCEDwWEdNdsf5wzEkldMmcvKvOfaG8ZwZjo6clSgCSHkQeChJjAkBCIAAm0WVEI38SkTLRayG284cgEJ4exDY8fLxqsGtQ+THC2cBEC1EJDEYIV69cn7ynaCouj7F7YifWSwjQlBYVrbIS47uCG9LBfc/wZsM+0qc0aSb2ttubiBExRz34ZkRNcyVGAu")
+        
+        let expectedHash = "BAD0320878F55686382CD5DFA3933C4E85100A8A0B376E7F5DD119A3E1CF2FAE"
+        XCTAssertEqual(block.hash, expectedHash)
+    }
+    
+    func test_idempotentBlockV1() throws {
+        let block = try Block.create(from: "MIIBhAIBAAIBAAUABBRpZGVtcG90ZW50X2tleV92YWxpZBgTMjAyNTEwMTEwNTQyNTcuNDg3WgQiAAIVerDrE1RPFYNjXPjbLtMf6dApIG4WAQA5LskSiNZTqAUABCBDo3Tzafekx1ivQOIs4ZZvvoLBPdN20zalPjyRo74KBTCBxKBMMEoEIgACRrmFHfkBmk8rFrA2etvh0MCeN/hBY6YXNHnkS+lN3I4CAQoEIQPBYR012x/nDMSSV0yZy8q859obxnBmOjpyVKAJIeRB4KBMMEoEIgACbRZUQjfxKRMtFrIbbzhyAQnh7ENjx8vGqwa1D5McLZwCARQEIQPBYR012x/nDMSSV0yZy8q859obxnBmOjpyVKAJIeRB4KEmMCQEIgACbRZUQjfxKRMtFrIbbzhyAQnh7ENjx8vGqwa1D5McLZwEQID+jcqn7rRy2RSQhA85+k5woB9HWDSmNPpdnrVrtmDTZYQNiDaiZYMC9yikJXzjntPePp0zzHMSTIrDyGyoh/Y=")
+        
+        let expectedHash = "3F2B932AC0830BCE3FFAA71796BA126FD9998767C65333A3DBF56C2D1335A514"
+        XCTAssertEqual(block.hash, expectedHash)
+        XCTAssertEqual(block.rawData.idempotent, "idempotent_key_valid")
+    }
+    
+    func test_idempotentBlockV2() throws {
+        let block = try Block.create(from: "oYIBhjCCAYICAQAEFGlkZW1wb3RlbnRfa2V5X3ZhbGlkGBMyMDI1MTAxMTA1NDc0MC4zMjRaAgEABCIAAhV6sOsTVE8Vg2Nc+Nsu0x/p0CkgbhYBADkuyRKI1lOoBQAEIEOjdPNp96THWK9A4izhlm++gsE903bTNqU+PJGjvgoFMIHEoEwwSgQiAAJGuYUd+QGaTysWsDZ62+HQwJ43+EFjphc0eeRL6U3cjgIBCgQhA8FhHTXbH+cMxJJXTJnLyrzn2hvGcGY6OnJUoAkh5EHgoEwwSgQiAAJtFlRCN/EpEy0WshtvOHIBCeHsQ2PHy8arBrUPkxwtnAIBFAQhA8FhHTXbH+cMxJJXTJnLyrzn2hvGcGY6OnJUoAkh5EHgoSYwJAQiAAJtFlRCN/EpEy0WshtvOHIBCeHsQ2PHy8arBrUPkxwtnARAyGqNldS23Ry+VlVLKV+/aAgQn6QuWscl63RmhZ6id80LG/oJrO+TUZ2F1ffW4yaxyA3oKsV9YnQaA/sRkY1cpQ==")
+        
+        let expectedHash = "20630B5EED455279BBFFF90A5E7E6457C7EE5BEF128710C565F27B2B1AD6121C"
+        XCTAssertEqual(block.hash, expectedHash)
+        XCTAssertEqual(block.rawData.idempotent, "idempotent_key_valid")
+    }
+    
+    func test_idempotent() throws {
+        let idempotentKey = try "idempotent_key_valid".idempotent()
+        XCTAssertEqual(idempotentKey, "aWRlbXBvdGVudF9rZXlfdmFsaWQ=")
+    }
 }

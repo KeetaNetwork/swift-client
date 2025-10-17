@@ -34,7 +34,7 @@ extension KeetaApi {
         
         XCTAssertEqual(result.account, account.publicKeyString, file: file, line: callLine)
         if let balance = balance {
-            XCTAssertEqual(result.balances.first?.value, balance, file: file, line: callLine)
+            XCTAssertEqual(result.rawBalances.first?.value, balance, file: file, line: callLine)
         }
         XCTAssertEqual(result.currentHeadBlock, head, file: file, line: callLine)
 

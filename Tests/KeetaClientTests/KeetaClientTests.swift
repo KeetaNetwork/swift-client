@@ -18,7 +18,7 @@ final class KeetaClientTests: XCTestCase {
         let from: Account
         let token: Account
         
-        func matches(_ transaction: Transaction) -> Bool {
+        func matches(_ transaction: NetworkSendTransaction) -> Bool {
             transaction.amount == amount
             && transaction.to.publicKeyString == to.publicKeyString
             && transaction.from.publicKeyString == from.publicKeyString
@@ -137,10 +137,10 @@ final class KeetaClientTests: XCTestCase {
         
         // Verify balances
         let account1Balance = try await client.balance(of: account1)
-        XCTAssertEqual(account1Balance.balances[token.publicKeyString], 2)
+        XCTAssertEqual(account1Balance.rawBalances[token.publicKeyString], 2)
         
         let account2Balance = try await client.balance(of: account2)
-        XCTAssertEqual(account2Balance.balances[token.publicKeyString], 1)
+        XCTAssertEqual(account2Balance.rawBalances[token.publicKeyString], 1)
     }
     
     func test_baseTokenMetaData() async throws {
@@ -173,19 +173,74 @@ final class KeetaClientTests: XCTestCase {
         XCTAssertEqual(info.decimalPlaces, 7)
         
         var tokenBalance = try await client.balance(of: token)
-        XCTAssertEqual(tokenBalance.balances[token.publicKeyString], supply)
+        XCTAssertEqual(tokenBalance.rawBalances[token.publicKeyString], supply)
         
         let recipient = try AccountBuilder.new()
         let sendAmount = BigInt(10)
-        try await client.send(
-            amount: sendAmount, from: token, to: recipient, token: token, signer: account, feeAccount: account
-        )
+        let options = Options(signer: account, feeAccount: account)
+        try await client.send(amount: sendAmount, from: token, to: recipient, token: token, options: options)
         
         tokenBalance = try await client.balance(of: token)
-        XCTAssertEqual(tokenBalance.balances[token.publicKeyString], supply - sendAmount)
+        XCTAssertEqual(tokenBalance.rawBalances[token.publicKeyString], supply - sendAmount)
         
         let recipientBalance = try await client.balance(of: recipient)
-        XCTAssertEqual(recipientBalance.balances[token.publicKeyString], sendAmount)
+        XCTAssertEqual(recipientBalance.rawBalances[token.publicKeyString], sendAmount)
+    }
+    
+    func test_recoverAccount() async throws {
+        let account = try AccountBuilder.new()
+        let recipient = try AccountBuilder.new()
+        
+        let client = KeetaClient(network: .test, account: account)
+        
+        // Fund account to cover network fees
+        try await fund(account: account, amount: 2_000_000)
+        
+        // Get account stuck by requesting temporary votes for conflicting blocks
+        
+        // Request temporary votes for first block
+        let send = try SendOperation(amount: 1, to: recipient, token: client.config.baseToken)
+        let sendBlock1 = try BlockBuilder()
+            .start(from: nil, network: client.config.networkID)
+            .add(account: account)
+            .add(operation: send)
+            .seal()
+
+        let temporaryVotes = try await client.api.votes(for: [sendBlock1], type: .temporary())
+        
+        // Try to get new temporary votes for a different block
+        let anotherSendBlock = try BlockBuilder()
+            .start(from: nil, network: client.config.networkID)
+            .add(account: account)
+            .add(operation: send)
+            .seal()
+        
+        do {
+            _ = try await client.api.votes(for: [anotherSendBlock], type: .temporary())
+            XCTFail("Shouldn't get conflicting temporary votes")
+            return
+        } catch RequestError<KeetaErrorResponse>.error(_, let error) {
+            XCTAssertEqual(error.code, .successorVoteExists) // expected
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+        
+        // Recover blocks to publish
+        let ready = try await client.recoverAccount(publish: false)
+        if case .readyToPublish(let recoveredBlocks, let recoveredTemporaryVotes) = ready {
+            XCTAssertEqual(recoveredBlocks.count, 2) // send block + fee block
+            XCTAssertTrue(recoveredBlocks.map(\.hash).contains(sendBlock1.hash))
+            XCTAssertEqual(Set(recoveredTemporaryVotes.map(\.hash)), Set(temporaryVotes.map(\.hash)))
+        } else {
+            XCTFail()
+            return
+        }
+        
+        // Recover account
+        _ = try await client.recoverAccount(publish: true)
+        
+        // Verify published block can be fetched from the network
+        _ = try await client.api.block(for: sendBlock1.hash)
     }
     
     func test_demo() async throws {
@@ -206,11 +261,12 @@ final class KeetaClientTests: XCTestCase {
 
         // 5. Send some of minted tokens to the generated account
         // ℹ️ Token accounts can't sign transactions — use the owner (account) as signer
-        try await client.send(amount: BigInt(10), from: newToken, to: account, token: newToken, signer: account)
+        let options = Options(signer: account)
+        try await client.send(amount: BigInt(10), from: newToken, to: account, token: newToken, options: options)
 
         // 6. Check the account's balance
         let accountBalance = try await client.balance()
-        print("Account Balance:", accountBalance.balances[newToken.publicKeyString] ?? "0") // 10
+        print("Account Balance:", accountBalance.rawBalances[newToken.publicKeyString] ?? "0") // 10
 
         // 7. Create a second account from the same seed with a different index
         let recipient = try AccountBuilder.create(fromSeed: seed, index: 1)
@@ -220,7 +276,7 @@ final class KeetaClientTests: XCTestCase {
 
         // 9.Check the recipient's balance
         let recipientBalance = try await client.balance(of: recipient)
-        print("Recipient Balance:", recipientBalance.balances[newToken.publicKeyString] ?? "0") // 5
+        print("Recipient Balance:", recipientBalance.rawBalances[newToken.publicKeyString] ?? "0") // 5
 
         // 10. List account transactions
         let transactions = try await client.transactions()
@@ -237,7 +293,7 @@ final class KeetaClientTests: XCTestCase {
     // MARK: Helper
     
     private func assert(
-        _ transactions: [Transaction],
+        _ transactions: [NetworkSendTransaction],
         _ expected: [ExpectedTransaction],
         file: StaticString = #filePath,
         line: UInt = #line
@@ -261,7 +317,7 @@ final class KeetaClientTests: XCTestCase {
     }
 }
 
-extension Transaction {
+extension NetworkSendTransaction {
     fileprivate func pretty() -> String {
         "amount: \(amount.readable()), from: \(from.publicKeyString), to: \(to.publicKeyString), token: \(token.publicKeyString), created: \(created.readable()), external: \(String(describing: memo))"
     }

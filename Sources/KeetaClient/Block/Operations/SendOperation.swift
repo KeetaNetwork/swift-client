@@ -30,6 +30,12 @@ public struct SendOperation: BlockOperation {
     public let token: Account.PublicKeyAndType
     public let external: String?
     
+    public init(amount: BigInt, to accountPubKey: String, tokenPubKey: String, external: String? = nil) throws {
+        let account = try AccountBuilder.create(fromPublicKey: accountPubKey)
+        let token = try AccountBuilder.create(fromPublicKey: tokenPubKey)
+        try self.init(amount: amount, to: account, token: token, external: external)
+    }
+    
     public init(amount: BigInt, to account: Account, token: Account, external: String? = nil) throws {
         guard amount > 0 else {
             throw SendOperationError.invalidAmount

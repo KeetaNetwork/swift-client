@@ -1,51 +1,18 @@
-import Foundation
-import BigInt
 import PotentASN1
+import Foundation
 
-public enum VoteError: Error {
-    case invalidExtensionSequence
-    case invalidExtensionCriticalCheck
-    case invalidExtensionOID
-    case unknownCriticalExtension(OID)
-    case invalidFeeDataExtension
+public enum VoteQuoteError: Error {
+    case invalidPermanentVote
     case invalidHashDataExtension
-    case invalidBlocksTag
-    case invalidBlocksDataSequence
-    case invalidBlocksSequence
-    case invalidBlocksOID
-    case unsupportedHashFunction(OID)
-    case unknownHashFunction(String)
-    case invalidBlockHash
-    case invalidBlocksSequenceLength
-    case permanentVoteCanNotHaveFees
+    case invalidFeeDataExtension
+    case missingFeeExtension
+    case unknownCriticalExtension(OID)
 }
 
-/*
- -- Votes are X.509v3 Certificates with additional information stored within the extensions
- 
- -- Extensions
- extensions     [3] EXPLICIT SEQUENCE {
-     -- Block hashesh being voted for, as an extension
-     hashDataExtension SEQUENCE {
-         -- Hash Data
-         extensionID OBJECT IDENTIFIER ( hashData ),
-         -- Critical
-         critical    BOOLEAN ( TRUE ),
-         -- Data
-         dataWrapper OCTET STRING (CONTAINING [0] EXPLICIT SEQUENCE {
-             -- Hash Algorithm
-             hashAlgorithm OBJECT IDENTIFIER,
-             -- Block hashes
-             hashes       SEQUENCE OF OCTET STRING
-         })
-     }
- }
- */
-
-public struct Vote {
+public struct VoteQuote {
     public let certificate: Certificate
     public let blocks: [String] // Hashes
-    public let fee: Fee?
+    public let fee: Fee
     private let data: Data
     
     // Convenience getter
@@ -68,6 +35,10 @@ public struct Vote {
     public init(from data: Data) throws {
         let certificate = try Certificate(from: data)
         
+        if certificate.permanent {
+            throw VoteQuoteError.invalidPermanentVote
+        }
+        
         // Parse extensions
         var blocks = [String]()
         var fee: Fee?
@@ -76,49 +47,34 @@ public struct Vote {
             switch oid {
             case .hashData:
                 guard let blocksData = `extension`.data.octetStringValue else {
-                    throw VoteError.invalidHashDataExtension
+                    throw VoteQuoteError.invalidHashDataExtension
                 }
                 let blocksAsn1 = try ASN1Serialization.asn1(fromDER: blocksData)
                 blocks.append(contentsOf: try BlockHash.parse(from: blocksAsn1))
             case .fees:
                 guard let feeData = `extension`.data.octetStringValue else {
-                    throw VoteError.invalidFeeDataExtension
+                    throw VoteQuoteError.invalidFeeDataExtension
                 }
                 let feesAsn1 = try ASN1Serialization.asn1(fromDER: feeData)
                 fee = try Fee(from: feesAsn1)
             default:
                 if `extension`.critical {
-                    throw VoteError.unknownCriticalExtension(oid)
+                    throw VoteQuoteError.unknownCriticalExtension(oid)
                 }
             }
         }
         
-        if fee != nil && certificate.permanent {
-            throw VoteError.permanentVoteCanNotHaveFees
+        guard let fee else {
+            throw VoteQuoteError.missingFeeExtension
         }
         
-        // Construct vote
         self.certificate = certificate
         self.blocks = blocks
         self.fee = fee
         self.data = data
     }
     
-    public func toData() -> Data {
-        data
-    }
-    
     public func base64String() -> String {
         data.base64EncodedString()
-    }
-}
-
-public extension [Vote] {
-    var fees: [Fee] {
-        compactMap { $0.fee }
-    }
-    
-    var requiresFees: Bool {
-        contains { $0.fee != nil }
     }
 }

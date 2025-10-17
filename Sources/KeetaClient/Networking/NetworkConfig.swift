@@ -2,6 +2,7 @@ public struct NetworkConfig {
     public let networkAlias: NetworkAlias
     public let networkID: NetworkID
     public let baseToken: Account
+    public let baseTokenDecimals: Int
     public let fountain: Account?
     public let reps: [ClientRepresentative]
     
@@ -16,6 +17,11 @@ public struct NetworkConfig {
         case .main: "keeta_anqdilpazdekdu4acw65fj7smltcp26wbrildkqtszqvverljpwpezmd44ssg"
         }
         
+        let baseTokenDecimals = switch network {
+        case .test: 9
+        case .main: 18
+        }
+        
         let fountainSeed: String? = switch network {
         case .test: "0000000000000000000000000000000000000000000000000000000000000000"
         case .main: nil
@@ -27,6 +33,7 @@ public struct NetworkConfig {
             networkAlias: network,
             networkID: networkID,
             baseToken: try AccountBuilder.create(fromPublicKey: baseTokenPubKey),
+            baseTokenDecimals: baseTokenDecimals,
             fountain: try fountainSeed.map { try AccountBuilder.create(fromSeed: $0, index: 0xffffffff) },
             reps: (1...numberOfReps).map {
                 .init(

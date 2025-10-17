@@ -39,11 +39,12 @@ let newToken = try await client.createToken(name: "DEMO", supply: BigInt(100))
 
 // 5. Send some of minted tokens to the generated account
 // ℹ️ Token accounts can't sign transactions — use the owner (account) as signer
-try await client.send(amount: BigInt(10), from: newToken, to: account, token: newToken, signer: account)
+let options = Options(signer: account)
+try await client.send(amount: BigInt(10), from: newToken, to: account, token: newToken, options: options)        
 
 // 6. Check the account's balance
 let accountBalance = try await client.balance()
-print("Account Balance:", accountBalance.balances[newToken.publicKeyString] ?? "0") // 10
+print("Account Balance:", accountBalance.rawBalances[newToken.publicKeyString] ?? "0") // 10
 
 // 7. Create a second account from the same seed with a different index
 let recipient = try AccountBuilder.create(fromSeed: seed, index: 1)
@@ -53,7 +54,7 @@ try await client.send(amount: BigInt(5), to: recipient, token: newToken)
 
 // 9.Check the recipient's balance
 let recipientBalance = try await client.balance(of: recipient)
-print("Recipient Balance:", recipientBalance.balances[newToken.publicKeyString] ?? "0") // 5
+print("Recipient Balance:", recipientBalance.rawBalances[newToken.publicKeyString] ?? "0") // 5
 
 // 10. List account transactions
 let transactions = try await client.transactions()

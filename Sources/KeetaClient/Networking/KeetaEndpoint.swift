@@ -26,8 +26,17 @@ struct KeetaEndpoint: Endpoint {
         }
     }
     
-    static func votes(for blocks: [Block], temporaryVotes: [Vote]? = nil, from repBaseUrls: Set<String>) throws -> [Self] {
-        let body = try VoteRequest(blocks: blocks, votes: temporaryVotes).toJSON()
+    static func temporaryVotes(
+        for blocks: [Block], quotes: [String: VoteQuote] = [:], from reps: [String: String]
+    ) throws -> [Self] {
+        try reps.map { pubKey, url in
+            let body = try VoteRequest(blocks: blocks, quote: quotes[pubKey], votes: nil).toJSON()
+            return .init(url: url + "/vote", method: .post, body: body)
+        }
+    }
+    
+    static func permanentVotes(for blocks: [Block], temporaryVotes: [Vote], from repBaseUrls: Set<String>) throws -> [Self] {
+        let body = try VoteRequest(blocks: blocks, quote: nil, votes: temporaryVotes).toJSON()
         return repBaseUrls.map { .init(url: $0 + "/vote", method: .post, body: body) }
     }
     
@@ -35,8 +44,17 @@ struct KeetaEndpoint: Endpoint {
         repBaseUrls.map { .init(url: $0 + "/vote/\(hash)", method: .get, query: ["side": side.rawValue]) }
     }
     
+    static func voteQuote(for blocks: [Block], repBaseUrls: Set<String>) throws -> [Self] {
+        let data: JSON = ["blocks": try blocks.map { try $0.base64String() }]
+        return repBaseUrls.map { .init(url: $0 + "/vote/quote", method: .post, body: data) }
+    }
+    
     static func pendingBlock(for account: Account, baseUrl: String) -> Self {
         .init(url: baseUrl + "/node/ledger/account/\(account.publicKeyString)/pending", method: .get)
+    }
+    
+    static func pendingBlock(for account: Account, from repBaseUrls: Set<String>) -> [Self] {
+        repBaseUrls.map { pendingBlock(for: account, baseUrl: $0) }
     }
     
     static func publish(voteStaple: VoteStaple, to repBaseUrls: Set<String>) -> [Self] {
@@ -50,6 +68,16 @@ struct KeetaEndpoint: Endpoint {
     
     static func accountInfo(of account: Account, baseUrl: String) -> Self {
         .init(url: baseUrl + "/node/ledger/account/\(account.publicKeyString)", method: .get)
+    }
+    
+    static func block(for hash: String, side: LedgerSide?, baseUrl: String) -> Self {
+        let path = "/node/ledger/block/\(hash)"
+        return .init(url: baseUrl + path, method: .get, query: side.map { ["side": $0.rawValue] } ?? [:])
+    }
+    
+    static func block(for account: Account, idempotent: String, side: LedgerSide, baseUrl: String) -> Self {
+        let path = "/node/ledger/account/\(account.publicKeyString)/idempotent/\(idempotent)"
+        return .init(url: baseUrl + path, method: .get, query: ["side": side.rawValue])
     }
     
     static func history(for account: Account, limit: Int, startBlockHash: String?, baseUrl: String) -> Self {

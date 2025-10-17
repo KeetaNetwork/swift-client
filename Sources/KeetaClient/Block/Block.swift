@@ -78,6 +78,13 @@ public struct Block {
         self.signature = verifiedSignature
     }
     
+    public static func create(from base64: String) throws -> Self {
+        guard let data = Data(base64Encoded: base64) else {
+            throw BlockError.invalidData
+        }
+        return try .init(from: data)
+    }
+    
     public init(from data: Data) throws {
         let asn1 = try ASN1Serialization.asn1(fromDER: data)
         
@@ -110,7 +117,7 @@ public struct Block {
             throw BlockError.invalidASN1Schema
         }
         
-        guard data.count == 8 || data.count == 9 else {
+        guard (8...10).contains(data.count) else {
             throw BlockError.invalidASN1SequenceLength
         }
         
@@ -161,17 +168,21 @@ public struct Block {
             throw BlockError.invalidNetwork
         }
         let subnet = sequence[2].integerValue
-        guard let anyTime = sequence[3].generalizedTimeValue else {
+        
+        let idempotent = try parseIdempotent(from: sequence[3])
+        let offset = idempotent != nil ? 0 : 1
+        
+        guard let anyTime = sequence[4 - offset].generalizedTimeValue else {
             throw BlockError.invalidDate
         }
         
-        guard let signerData = sequence[4].octetStringValue else {
+        guard let signerData = sequence[5 - offset].octetStringValue else {
             throw BlockError.invalidSigner
         }
         let signer = try Account(data: signerData)
         
         let account: Account
-        if let accountData = sequence[5].octetStringValue {
+        if let accountData = sequence[6 - offset].octetStringValue {
             account = try Account(data: accountData)
             
             if account == signer {
@@ -182,17 +193,17 @@ public struct Block {
             account = signer
         }
         
-        guard let previousHashData = sequence[6].octetStringValue else {
+        guard let previousHashData = sequence[7 - offset].octetStringValue else {
             throw BlockError.invalidHash
         }
         let previousHash = previousHashData.toHexString()
         
-        guard let operationsSequence = sequence[7].sequenceValue else {
+        guard let operationsSequence = sequence[8 - offset].sequenceValue else {
             throw BlockError.invalidOperationsSequence
         }
         let operations = try operationsSequence.map { try BlockOperationBuilder.create(from: $0) }
         
-        guard let signature = sequence[8].octetStringValue else {
+        guard let signature = sequence[9 - offset].octetStringValue else {
             throw BlockError.invalidSignature
         }
         
@@ -201,6 +212,7 @@ public struct Block {
         let rawBlock = RawBlockData(
             version: .v1,
             purpose: .generic,
+            idempotent: idempotent,
             previous: previousHash,
             network: network,
             subnet: subnet,
@@ -218,23 +230,25 @@ public struct Block {
             throw BlockError.invalidNetwork
         }
         let subnet = sequence[1].integerValue
+        var offset = subnet != nil ? 0 : 1
         
-        let offset = subnet != nil ? 0 : 1
+        let idempotent = try parseIdempotent(from: sequence[2 - offset])
+        offset += idempotent != nil ? 0 : 1
         
-        guard let anyTime = sequence[2 - offset].generalizedTimeValue else {
+        guard let anyTime = sequence[3 - offset].generalizedTimeValue else {
             throw BlockError.invalidDate
         }
-        guard let purposeRaw = sequence[3 - offset].integerValue,
+        guard let purposeRaw = sequence[4 - offset].integerValue,
                 let purpose = Block.Purpose(rawValue: Int(purposeRaw)) else {
             throw BlockError.invalidPurpose
         }
         
-        guard let accountData = sequence[4 - offset].octetStringValue else {
+        guard let accountData = sequence[5 - offset].octetStringValue else {
             throw BlockError.invalidSigner
         }
         let account = try Account(data: accountData)
         
-        let signerContainer = sequence[5 - offset]
+        let signerContainer = sequence[6 - offset]
         let signer: Account
         if signerContainer.isNull {
             signer = account
@@ -245,17 +259,17 @@ public struct Block {
             throw NSError(domain: "Multi-signatures not implemented", code: 0)
         }
         
-        guard let previousHashData = sequence[6 - offset].octetStringValue else {
+        guard let previousHashData = sequence[7 - offset].octetStringValue else {
             throw BlockError.invalidHash
         }
         let previousHash = previousHashData.toHexString()
         
-        guard let operationsSequence = sequence[7 - offset].sequenceValue else {
+        guard let operationsSequence = sequence[8 - offset].sequenceValue else {
             throw BlockError.invalidOperationsSequence
         }
         let operations = try operationsSequence.map { try BlockOperationBuilder.create(from: $0) }
         
-        let signatureContainer = sequence[8 - offset]
+        let signatureContainer = sequence[9 - offset]
         let signature: Signature
         if let signatureValue = signatureContainer.octetStringValue {
             signature = .single(signatureValue.bytes)
@@ -269,6 +283,7 @@ public struct Block {
         let rawBlock = RawBlockData(
             version: .v2,
             purpose: purpose,
+            idempotent: idempotent,
             previous: previousHash,
             network: network,
             subnet: subnet,
@@ -279,5 +294,14 @@ public struct Block {
         )
         
         return (rawBlock, signature, opening)
+    }
+    
+    private static func parseIdempotent(from asn1: ASN1) throws -> String? {
+        guard let idempotentData = asn1.octetStringValue else { return nil }
+        
+        guard let idempotentString = String(data: idempotentData, encoding: .utf8) else {
+            throw BlockError.invalidIdempotentData
+        }
+        return idempotentString
     }
 }

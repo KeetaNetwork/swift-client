@@ -1,3 +1,3 @@
-enum LedgerSide: String {
+public enum LedgerSide: String {
     case main, side
 }

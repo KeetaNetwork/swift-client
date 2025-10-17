@@ -6,6 +6,7 @@ import BigInt
 public struct RawBlockData {
     public let version: Block.Version
     public let purpose: Block.Purpose
+    public let idempotent: String?
     public let previous: String
     public let network: NetworkID
     public let subnet: SubnetID?
@@ -29,8 +30,20 @@ extension RawBlockData {
     }
     
     func asn1Values() throws -> [ASN1] {
+        let idempotentData: Data?
+        if let idempotent {
+            guard let data = Data(base64Encoded: idempotent) ?? idempotent.data(using: .utf8) else {
+                throw BlockError.invalidIdempotentData
+            }
+            idempotentData = data
+        } else {
+            idempotentData = nil
+        }
+        
         let previousBytes = try previous.toBytes()
         let asn1Subnet: ASN1? = subnet.map { .integer($0) }
+        let idempotent: ASN1? = idempotentData.map { .octetString($0) }
+        
         let operations: [ASN1] = try operations.map { try $0.tagged() }
         let signer = Data(signer.publicKeyAndType)
         let account = Data(account.publicKeyAndType)
@@ -41,17 +54,19 @@ extension RawBlockData {
                 .integer(version.value),
                 .integer(network),
                 asn1Subnet ?? .null,
+                idempotent,
                 .generalizedTime(ZonedDate(date: created, timeZone: .utc)),
                 .octetString(signer),
                 account != signer ? .octetString(account) : ASN1.null,
                 .octetString(Data(previousBytes)),
                 .sequence(operations)
-            ]
+            ].compactMap { $0 }
             
         case .v2:
             [
                 .integer(network),
                 asn1Subnet,
+                idempotent,
                 .generalizedTime(ZonedDate(date: created, timeZone: .utc)),
                 .integer(purpose.value),
                 .octetString(account),
