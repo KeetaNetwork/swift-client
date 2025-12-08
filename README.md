@@ -126,13 +126,13 @@ Supported Operations
 let config: NetworkConfig = try .create(for: .test)
 
 let sendBlock = try BlockBuilder()
-        .start(from: nil, network: config.networkID)
+        .start(from: nil, network: config.network)
         .add(account: senderAccount) // the block will be added to it's chain
         .add(operation: SendOperation(amount: 10, to: recipientAccount, token: baseToken))
         .seal()
 
 let consecutiveBlock = try BlockBuilder()
-        .start(from: sendBlock.hash, network: config.networkID)
+        .start(from: sendBlock.hash, network: config.network)
         .add(account: tokenAccount)
         .add(signer: ownerAccount) // sign on behalf of token account
         .add(operation: SetInfoOperation(name: "Demo Account".uppercased()))

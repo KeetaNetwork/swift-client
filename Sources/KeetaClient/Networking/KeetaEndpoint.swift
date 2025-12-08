@@ -80,11 +80,11 @@ struct KeetaEndpoint: Endpoint {
         return .init(url: baseUrl + path, method: .get, query: ["side": side.rawValue])
     }
     
-    static func history(for account: Account, limit: Int, startBlockHash: String?, baseUrl: String) -> Self {
+    static func history(for account: Account, limit: Int, startBlocksHash: String?, baseUrl: String) -> Self {
         var path = "/node/ledger/account/\(account.publicKeyString)/history"
         
-        if let startBlockHash {
-            path += "/start/\(startBlockHash)"
+        if let startBlocksHash {
+            path += "/start/\(startBlocksHash)"
         }
         
         return .init(url: baseUrl + path, method: .get, query: ["limit": "\(limit)"])

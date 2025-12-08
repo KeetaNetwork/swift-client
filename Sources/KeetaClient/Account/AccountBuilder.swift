@@ -15,9 +15,22 @@ public struct AccountBuilder {
         index: Int,
         algorithm: Account.KeyAlgorithm = .ECDSA_SECP256K1
     ) throws -> Account {
+        try create(fromSeed: try seed.toBytes(), index: index, algorithm: algorithm)
+    }
+    
+    public static func create(
+        fromSeed seed: [UInt8],
+        index: Int,
+        algorithm: Account.KeyAlgorithm = .ECDSA_SECP256K1
+    ) throws -> Account {
         let seedBase = try combine(seed: seed, and: index)
         let keyPair = try algorithm.utils.create(from: seedBase)
         return try .init(keyPair: keyPair, keyAlgorithm: algorithm)
+    }
+    
+    public static func create(for config: NetworkConfig) throws -> Account {
+        let seed = config.network.id.toData(length: 32).toBytes()
+        return try create(fromSeed: seed, index: 0, algorithm: .NETWORK)
     }
     
     public static func create(fromPublicKey publicKey: String) throws -> Account {
@@ -81,6 +94,10 @@ public struct AccountBuilder {
     // MARK: - Internal
     
     static func combine(seed: String, and index: Int) throws -> String {
+        try combine(seed: try seed.toBytes(), and: index)
+    }
+    
+    static func combine(seed: [UInt8], and index: Int) throws -> String {
         guard index >= 0 else {
             throw AccountBuilderError.seedIndexNegative
         }
@@ -91,14 +108,14 @@ public struct AccountBuilder {
             throw AccountBuilderError.seedIndexTooLarge
         }
         
-        var seedBytes = try seed.toBytes()
+        var mutableSeed = seed
         
-        seedBytes.append(UInt8(indexValue >> BigInt(24) & BigInt(0xff)))
-        seedBytes.append(UInt8(indexValue >> BigInt(16) & BigInt(0xff)))
-        seedBytes.append(UInt8(indexValue >> BigInt(8)  & BigInt(0xff)))
-        seedBytes.append(UInt8(indexValue               & BigInt(0xff)))
+        mutableSeed.append(UInt8(indexValue >> BigInt(24) & BigInt(0xff)))
+        mutableSeed.append(UInt8(indexValue >> BigInt(16) & BigInt(0xff)))
+        mutableSeed.append(UInt8(indexValue >> BigInt(8)  & BigInt(0xff)))
+        mutableSeed.append(UInt8(indexValue               & BigInt(0xff)))
         
-        return .init(bytes: seedBytes).uppercased()
+        return .init(bytes: mutableSeed).uppercased()
     }
     
 }

@@ -4,6 +4,13 @@ public enum NetworkAlias: String {
     case test
     case main
     
+    public var id: NetworkID {
+        switch self {
+        case .test: 0x54455354 // 1413829460
+        case .main: 0x5382 // 21378
+        }
+    }
+    
     public func keetaRepApiBaseUrl(number: Int = 1) -> String {
         "https://rep\(number).\(self).network.api.keeta.com/api"
     }

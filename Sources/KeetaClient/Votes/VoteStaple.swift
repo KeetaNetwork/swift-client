@@ -21,6 +21,7 @@ enum VoteStapleError: Error, Equatable {
 
 public struct VoteStaple {
     public let blocks: [Block]
+    public let blocksHash: String
     public let votes: [Vote]
     public let data: Data
     
@@ -132,7 +133,10 @@ public struct VoteStaple {
             }
         }
         
-        return .init(blocks: orderedBlocks, votes: votes, data: decompressed)
+        let blockHashesCombined = try orderedBlockHashes.map { try $0.toBytes() }.flatMap { $0 }
+        let blocksHash: String = Hash.create(from: blockHashesCombined)
+        
+        return .init(blocks: orderedBlocks, blocksHash: blocksHash, votes: votes, data: decompressed)
     }
     
     public func base64String() -> String {

@@ -26,4 +26,5 @@ public enum ErrorCode: String, Decodable {
     case blockFieldInvalid = "BLOCK_GENERAL_FIELD_INVALID"
     case blockInvalidIdentifier = "BLOCK_IDENTIFIER_INVALID"
     case missingRequiredFeeBlock = "LEDGER_MISSING_REQUIRED_FEE_BLOCK"
+    case quotesMismatch = "LEDGER_QUOTE_MISMATCH"
 }

@@ -5,7 +5,7 @@ import PackageDescription
 
 let package = Package(
     name: "KeetaClient",
-    platforms: [.iOS("14.0"), .macOS(.v11)],
+    platforms: [.iOS("15.0"), .macOS(.v11)],
     products: [
         // Products define the executables and libraries a package produces, and make them visible to other packages.
         .library(
@@ -18,7 +18,7 @@ let package = Package(
         .package(url: "https://github.com/attaswift/BigInt.git", .upToNextMajor(from: "5.3.0")),
         .package(url: "https://github.com/apple/swift-asn1.git", from: "1.3.0"),
         .package(url: "https://github.com/krzyzanowskim/CryptoSwift.git", .upToNextMajor(from: "1.8.5")),
-        .package(url: "https://github.com/outfoxx/PotentCodables.git", from: "3.5.2"),
+        .package(url: "https://github.com/KeetaNetwork/PotentCodables.git", branch: "der-generalized-time-omit-zeros"),
         .package(url: "https://github.com/bitmark-inc/bip39-swift.git", from: "1.0.1"),
         .package(url: "https://github.com/norio-nomura/Base32.git", from: "0.5.4")
     ],

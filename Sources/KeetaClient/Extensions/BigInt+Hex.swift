@@ -13,7 +13,7 @@ extension BigInt {
         String(self, radix: 16)
     }
     
-    public func toData() -> Data {
+    public func toData(length: Int? = nil) -> Data {
         var valueStr = toHex()
         
         // Determine if the value is negative
@@ -28,15 +28,21 @@ extension BigInt {
             valueStr = "0" + valueStr
         }
         
+        // Pad with zero to achieve required length
+        if let length, valueStr.count < length {
+            let padding = length * 2 - valueStr.count
+            valueStr = String(repeating: "0", count: padding) + valueStr
+        }
+        
         // Pad with a leading 0 byte if the MSB is 1 to avoid writing a negative number
         if let leaderValue = Int(valueStr.prefix(2), radix: 16) {
-            if !isNegative {
-                if leaderValue > 127 {
-                    valueStr = "00" + valueStr
-                }
-            } else {
+            if isNegative {
                 if leaderValue <= 127 {
                     valueStr = "FF" + valueStr
+                }
+            } else {
+                if leaderValue > 127 {
+                    valueStr = "00" + valueStr
                 }
             }
         }

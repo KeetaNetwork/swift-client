@@ -174,7 +174,7 @@ final class AccountBuilderTests: XCTestCase {
             /**
              * Modify the data and verify that the signature cannot be validated
              */
-            var invalidData = data.bytes
+            var invalidData = data.toBytes()
             invalidData[1] += 1
             let updatedValue2 = Int(invalidData[1]) % 256
             invalidData[1] = .init(updatedValue2)

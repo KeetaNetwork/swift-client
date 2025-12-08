@@ -9,22 +9,13 @@ public typealias SubnetID = BigInt
 public enum BlockSignature: Hashable {
     case single(Signature)
     case multi([Signature])
-    
-    func toHexString() -> String {
-        switch self {
-        case .single(let signature): signature.toHexString()
-        case .multi(let signatures): "Multi-signatures not implemented"
-        }
-    }
 }
 
 public struct Block {
-    public typealias Signature = BlockSignature
-    
     public let rawData: RawBlockData
     public let opening: Bool
     public let hash: String
-    public let signature: Signature
+    public let signature: BlockSignature
     
     public enum Version: Int, CaseIterable {
         case v1
@@ -56,20 +47,15 @@ public struct Block {
         let hash = try rawBlock.hash()
         let hashBytes = try hash.toBytes()
         
-        let verifiedSignature: Signature
+        let verifiedSignature: BlockSignature
         if let signature = signature {
-            switch signature {
-            case .single(let signature):
-                let verified = try rawBlock.signer.verify(data: Data(hashBytes), signature: signature)
-                guard verified else {
-                    throw BlockError.invalidSignature
-                }
-                verifiedSignature = .single(signature)
-            case .multi:
-                throw NSError(domain: "Multi-signatures not implemented", code: 0)
+            let verified = try rawBlock.signer.account.verify(data: Data(hashBytes), signature: signature)
+            guard verified else {
+                throw BlockError.invalidSignature
             }
+            verifiedSignature = .single(signature)
         } else {
-            verifiedSignature = .single(try rawBlock.signer.sign(data: Data(hashBytes)))
+            verifiedSignature = .single(try rawBlock.signer.account.sign(data: Data(hashBytes)))
         }
         
         self.rawData = rawBlock
@@ -122,7 +108,7 @@ public struct Block {
         }
         
         let rawBlock: RawBlockData
-        let signature: Signature
+        let signature: BlockSignature
         let opening: Bool
         
         switch version {
@@ -134,6 +120,15 @@ public struct Block {
         self.opening = opening
         self.hash = try rawBlock.hash()
         self.signature = signature
+        
+        // Verify block signature
+        switch signature {
+        case .single(let signature):
+            let verified = try rawBlock.signer.account.verify(data: Data(try hash.toBytes()), signature: signature)
+            if !verified { throw BlockError.invalidSignature }
+        case .multi:
+            break // currently not supported
+        }
     }
     
     public func toAsn1() throws -> [ASN1] {
@@ -143,7 +138,7 @@ public struct Block {
         case .single(let signature):
             rawASN1 + [.octetString(.init(signature))]
         case .multi(let signatures):
-            rawASN1 + signatures.map { .octetString(.init($0)) }
+            rawASN1 + [.sequence(signatures.map { .octetString(Data($0)) })]
         }
     }
     
@@ -163,7 +158,7 @@ public struct Block {
     
     // MARK: Helper
     
-    private static func blockDataV1(for sequence: [ASN1]) throws -> (RawBlockData, Signature, Bool) {
+    private static func blockDataV1(for sequence: [ASN1]) throws -> (RawBlockData, BlockSignature, Bool) {
         guard let network = sequence[1].integerValue else {
             throw BlockError.invalidNetwork
         }
@@ -216,7 +211,7 @@ public struct Block {
             previous: previousHash,
             network: network,
             subnet: subnet,
-            signer: signer,
+            signer: .single(signer),
             account: account,
             operations: operations,
             created: anyTime.zonedDate.utcDate
@@ -225,7 +220,7 @@ public struct Block {
         return (rawBlock, .single(signature.bytes), opening)
     }
     
-    private static func blockDataV2(for sequence: [ASN1]) throws -> (RawBlockData, Signature, Bool) {
+    private static func blockDataV2(for sequence: [ASN1]) throws -> (RawBlockData, BlockSignature, Bool) {
         guard let network = sequence[0].integerValue else {
             throw BlockError.invalidNetwork
         }
@@ -249,14 +244,13 @@ public struct Block {
         let account = try Account(data: accountData)
         
         let signerContainer = sequence[6 - offset]
-        let signer: Account
+        let signer: RawBlockData.Signer
         if signerContainer.isNull {
-            signer = account
+            signer = .single(account)
         } else if let signerData = signerContainer.octetStringValue {
-            signer = try Account(data: signerData)
+            signer = .single(try Account(data: signerData))
         } else {
-            // TODO: implement 'this.signer = parseBlockSignerFieldContainer(signersContainer).parsed;'
-            throw NSError(domain: "Multi-signatures not implemented", code: 0)
+            signer = try parseMultiSig(signerContainer)
         }
         
         guard let previousHashData = sequence[7 - offset].octetStringValue else {
@@ -270,11 +264,16 @@ public struct Block {
         let operations = try operationsSequence.map { try BlockOperationBuilder.create(from: $0) }
         
         let signatureContainer = sequence[9 - offset]
-        let signature: Signature
+        let signature: BlockSignature
         if let signatureValue = signatureContainer.octetStringValue {
             signature = .single(signatureValue.bytes)
+        } else if let signatureValues = signatureContainer.sequenceValue {
+            let signatures = signatureValues.compactMap { $0.octetStringValue?.bytes }
+            guard !signatures.isEmpty && signatures.count == signatureValues.count else {
+                throw BlockError.missingMultiSigSignatures
+            }
+            signature = .multi(signatures)
         } else {
-            // TODO: implement 'assertBlockSignatureField(signatureContainer);'
             throw BlockError.invalidSignature
         }
         
@@ -296,12 +295,43 @@ public struct Block {
         return (rawBlock, signature, opening)
     }
     
+    private static func parseMultiSig(_ container: ASN1, depth: Int = 0) throws -> RawBlockData.Signer {
+        guard depth <= 3 else {
+            throw BlockError.invalidMultiSigSignersDepth
+        }
+        
+        guard let sequence = container.sequenceValue, sequence.count == 2 else {
+            throw BlockError.invalidMultiSigSequence
+        }
+        
+        guard let multiSigData = sequence[0].octetStringValue else {
+            throw BlockError.invalidMultiSigAccount
+        }
+        
+        let account = try Account(data: multiSigData)
+        
+        guard let signersSequence = sequence[1].sequenceValue else {
+            throw BlockError.missingMultiSigSigners
+        }
+        
+        var signers = [RawBlockData.Signer]()
+        
+        for item in signersSequence {
+            if let accountData = item.octetStringValue {
+                signers.append(.single(try Account(data: accountData)))
+            } else if item.sequenceValue != nil {
+                signers.append(try parseMultiSig(item, depth: depth + 1))
+            } else {
+                throw BlockError.invalidMultiSigSigners
+            }
+        }
+        
+        return .multi(account, signers)
+    }
+    
     private static func parseIdempotent(from asn1: ASN1) throws -> String? {
         guard let idempotentData = asn1.octetStringValue else { return nil }
-        
-        guard let idempotentString = String(data: idempotentData, encoding: .utf8) else {
-            throw BlockError.invalidIdempotentData
-        }
+        let idempotentString = String(data: idempotentData, encoding: .utf8) ?? idempotentData.base64EncodedString()
         return idempotentString
     }
 }

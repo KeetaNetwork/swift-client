@@ -6,6 +6,19 @@ final class BlockBuilderTests: XCTestCase {
     let seed = "2401D206735C20485347B9A622D94DE9B21F2F1450A77C42102237FA4077567D"
     let baseToken = try! AccountBuilder.create(fromPublicKey: "keeta_apawchjv3mp6odgesjluzgolzk6opwq3yzygmor2ojkkacjb4ra6anxxzwsti")
     
+    func test_networkAccounts() throws {
+        let expectedAccounts: [NetworkAlias: String] = [
+            .main: "keeta_alwerxoezkupzhifvpo5yvoazlsdqaweov66mokhq7xl4h5ow36v5xu6ek3js",
+            .test: "keeta_aj5pgcaced3jjixdn7unsybr4bx2v2p22zyhwubggp3i7474dze3ehhc5b4u4"
+        ]
+        
+        for alias in expectedAccounts.keys {
+            let config = try NetworkConfig.create(for: alias)
+            let account = try AccountBuilder.create(for: config)
+            XCTAssertEqual(account.publicKeyString, expectedAccounts[alias], "Mismatch for network '\(alias.rawValue)'")
+        }
+    }
+    
     func test_constructBlockFromData() throws {
         // generated using TS node v0.14.3
         let encodedBlocks: [Block.Version: [String]] = [
@@ -230,12 +243,72 @@ final class BlockBuilderTests: XCTestCase {
         XCTAssertEqual(block.hash, expectedHash)
     }
     
+    func test_multisigIdentifierCreationBlockV1() throws {
+        let block = try Block.create(from: "MIIBIQIBAAIBAAUAGBMyMDI1MTEwNzEzNTg1My43MjhaBCIAAhV6sOsTVE8Vg2Nc+Nsu0x/p0CkgbhYBADkuyRKI1lOoBQAEIEOjdPNp96THWK9A4izhlm++gsE903bTNqU+PJGjvgoFMHikdjB0BCEHwWEdNdsf5wzEkldMmcvKvOfaG8ZwZjo6clSgCSHkQeCnTzBNMEgEIgACFXqw6xNUTxWDY1z42y7TH+nQKSBuFgEAOS7JEojWU6gEIgACRrmFHfkBmk8rFrA2etvh0MCeN/hBY6YXNHnkS+lN3I4CAQIEQKAK0dOLr7IUDl3tkXX5V3dIxO6ePWa9/w2txN3TZpwXZHU7LUB/w7QsBl2RnMuc0giWQ1o4pIfPMEODTY/218o=")
+        
+        let expectedHash = "8697ECECD10E14EEC58783964E67962FE66C39649050DAFE585D82821F8A805B"
+        XCTAssertEqual(block.hash, expectedHash)
+        
+        let expectedSignature = "A00AD1D38BAFB2140E5DED9175F9577748C4EE9E3D66BDFF0DADC4DDD3669C1764753B2D407FC3B42C065D919CCB9CD20896435A38A487CF3043834D8FF6D7CA"
+        XCTAssertEqual(block.signature, .single(try expectedSignature.toBytes()))
+    }
+    
     func test_idempotentBlockV1() throws {
         let block = try Block.create(from: "MIIBhAIBAAIBAAUABBRpZGVtcG90ZW50X2tleV92YWxpZBgTMjAyNTEwMTEwNTQyNTcuNDg3WgQiAAIVerDrE1RPFYNjXPjbLtMf6dApIG4WAQA5LskSiNZTqAUABCBDo3Tzafekx1ivQOIs4ZZvvoLBPdN20zalPjyRo74KBTCBxKBMMEoEIgACRrmFHfkBmk8rFrA2etvh0MCeN/hBY6YXNHnkS+lN3I4CAQoEIQPBYR012x/nDMSSV0yZy8q859obxnBmOjpyVKAJIeRB4KBMMEoEIgACbRZUQjfxKRMtFrIbbzhyAQnh7ENjx8vGqwa1D5McLZwCARQEIQPBYR012x/nDMSSV0yZy8q859obxnBmOjpyVKAJIeRB4KEmMCQEIgACbRZUQjfxKRMtFrIbbzhyAQnh7ENjx8vGqwa1D5McLZwEQID+jcqn7rRy2RSQhA85+k5woB9HWDSmNPpdnrVrtmDTZYQNiDaiZYMC9yikJXzjntPePp0zzHMSTIrDyGyoh/Y=")
         
         let expectedHash = "3F2B932AC0830BCE3FFAA71796BA126FD9998767C65333A3DBF56C2D1335A514"
         XCTAssertEqual(block.hash, expectedHash)
         XCTAssertEqual(block.rawData.idempotent, "idempotent_key_valid")
+    }
+    
+    func test_multiSigBlockV2() throws {
+        let block = try Block.create(from: "oYICPTCCAjkCAlOCBCAk4moTFpRvyVL6PItZxkeAd3UNKdVNDy7qXNNANkQf1BgTMjAyNTExMDYxNTIxNDguNTM0WgIBAAQhBBcxgXyMjzVjqCHH/3cbYNKhMVTo+UW7pTObmEb0XYj2MIGRBCEH97LbhjVfk/ncXSfpSn50Yy7Zh4WBYDEDJTwAeIsHTSYwbAQiAAOfTPCJY0GnHAFqOYJqRffcEBbOoeGqHTQpW2ocP3tMsAQiAANdd5txw2+nEg9ztKP3C1q/A9snerbUieK2Y1fu47l+PQQiAAJb3V9P9RlfJLdnM7Db6UtxF2r/r4j0taw+xRvLJxbLoAQgWuspKYiuM6Qj/G1qh1kYGnDBZXrLU7tSi4Yk7XYvn8swV6BVMFMEIgACW4nSA+I2drrhuNUL9AG6rqiqUZSHR9aEg/Gg3Nz4ofYCCgQ2x/o1SAFwAAAEIQNgNC3gyMih04AVvdKn8mLmJ+vWDFCxqhOWYVqSK0vs8jCBxgRAhGqfeXEXRmsBGlhaDNHe7xR3fUbiHIfQmODy00tx5/YkPkTjL34H1dVlTYAVtMjlk//SSHXiyW5ZpVNEDoppPQRAGGAVQO1oZfZ4jMxhMZFILGAx7aXOBth2Js3TbCTHxN80euhe/DSPlC0jL0NdilPR2AsGC+KGdBzMCFzT9LCLTQRAK3i5x7D+5BqRuiqeKa9npKVKpwb5lgiH9lzuNZB/ZZEe0a/hDAkozpTmGEb0NHPwwIHaelm1/G1f7vdrs/XsCQ==")
+        
+        XCTAssertEqual(block.rawData.version, .v2)
+        
+        let expectedHash = "044E18C4E35143466BC68C2972810669E5ED7AB68E092CA561B7376CDF3E792F"
+        XCTAssertEqual(block.hash, expectedHash)
+        
+        let expectedIdempotent = "JOJqExaUb8lS+jyLWcZHgHd1DSnVTQ8u6lzTQDZEH9Q="
+        XCTAssertEqual(block.rawData.idempotent, expectedIdempotent)
+        
+        let expectedSignatures = [
+            "846A9F797117466B011A585A0CD1DEEF14777D46E21C87D098E0F2D34B71E7F6243E44E32F7E07D5D5654D8015B4C8E593FFD24875E2C96E59A553440E8A693D",
+            "18601540ED6865F6788CCC613191482C6031EDA5CE06D87626CDD36C24C7C4DF347AE85EFC348F942D232F435D8A53D1D80B060BE286741CCC085CD3F4B08B4D",
+            "2B78B9C7B0FEE41A91BA2A9E29AF67A4A54AA706F9960887F65CEE35907F65911ED1AFE10C0928CE94E61846F43473F0C081DA7A59B5FC6D5FEEF76BB3F5EC09"
+        ]
+        
+        if case .multi(let signatures) = block.signature {
+            XCTAssertEqual(signatures, try expectedSignatures.map { try $0.toBytes() })
+        } else {
+            XCTFail("Expected multisignature signature")
+        }
+        
+        if case .multi(let account, let signers) = block.rawData.signer {
+            XCTAssertEqual(account.publicKeyString, "keeta_a733fw4ggvpzh6o4lut6sst6orrs5wmhqwawamideu6aa6ela5gsnztw4vvqm")
+            XCTAssertTrue(signers.allSatisfy { if case .single = $0 { true } else { false } })
+            XCTAssertEqual(signers.map(\.account.publicKeyString), [
+                "keeta_aabz6thqrfrudjy4afvdtatkix35yeawz2q6dkq5gquvw2q4h55uzmhq6cdyaha",
+                "keeta_aabv2543ohbw7jysb5z3ji7xbnnl6a63e55lnvej4k3ggv7o4o4x4po5mchj5uy",
+                "keeta_aabfxxk7j72rsxzew5tthmg35ffxcf3k76xyr5fvvq7mkg6le4lmxibrdkvqn5y"
+            ])
+        } else {
+            XCTFail("Expected multisignature signers")
+        }
+    }
+    
+    func test_feeBlockV2() throws {
+        let block = try Block.create(from: "oYIB/jCCAfoCAlOCGBMyMDI1MTIwNDAyMTU0Mi43MzBaAgEBBCIAAl8YxHyTnsdLw2iqvPrijKJYHos5dRJaVNMEtXguUvQrBQAEIGaRwSbSVjgdoJCDeN0D8mtwEUOcMu4x4ZaK03233/zWMIIBUKBSMFAEIgACFbCnNSKvklQqa9LnfGrF8l2a9PoVJT3YVhZNAP8ll4gCBwrfDcUDQAAEIQNgNC3gyMih04AVvdKn8mLmJ+vWDFCxqhOWYVqSK0vs8qBSMFAEIgACWjKmwrySF8Wxs52p0FHW3N9T57SfeWRrcK0xJRdm3dECBwrfDcUDQAAEIQNgNC3gyMih04AVvdKn8mLmJ+vWDFCxqhOWYVqSK0vs8qBSMFAEIgAD3XAEyrsP9k7sy5sfbTsr9Tv8g3HFVCyDC2r3fFWBbpYCBwrfDcUDQAAEIQNgNC3gyMih04AVvdKn8mLmJ+vWDFCxqhOWYVqSK0vs8qBSMFAEIgACqBIgT1/pWhfTv9he6IgIBEufEfA/0zzqU5TGE5tirXkCBwrfDcUDQAAEIQNgNC3gyMih04AVvdKn8mLmJ+vWDFCxqhOWYVqSK0vs8gRABfq756MEqsoZQAq5PSZDb91IoXhpYiqIfNL00GVfEwwk21uWgwhBLWyzFWbSVN5cWsZDdLVi+W+5jghlhv8KLA==")
+        
+        let expectedHash = "2B660432362CEC6ED626840F73F98D81397C5395981D5D44C67B59ED44D00628"
+        XCTAssertEqual(block.hash, expectedHash)
+    }
+    
+    func test_feeBlockV2NoFractionalSeconds() throws {
+        let block = try Block.create(from: "oYIB+jCCAfYCAlOCGA8yMDI1MTExOTIxNDc1OVoCAQEEIgACXxjEfJOex0vDaKq8+uKMolgeizl1ElpU0wS1eC5S9CsFAAQgIbrNaJ2MJQPU+Aynlhcevmvf26HBt4Mdnp842H0VSWgwggFQoFIwUAQiAANcYYE1XWhn6RPZzsoJLGkaZ0M9Y9QztMO1RqBNnQezjgIHCt8NxQNAAAQhA2A0LeDIyKHTgBW90qfyYuYn69YMULGqE5ZhWpIrS+zyoFIwUAQiAAKuImOBuXLw89BPO45nMrr4idlPk71e5NCS1bCrXiNjfwIHCt8NxQNAAAQhA2A0LeDIyKHTgBW90qfyYuYn69YMULGqE5ZhWpIrS+zyoFIwUAQiAAL3Wlfc/GoNk2n88oPEDW6rnwCuHzCubofIbeDCBKNOSwIHCt8NxQNAAAQhA2A0LeDIyKHTgBW90qfyYuYn69YMULGqE5ZhWpIrS+zyoFIwUAQiAAMr9ggNx/UztTqAGOwVmsmBvCYo5QdlFkSV3Dl1QwTJ6wIHCt8NxQNAAAQhA2A0LeDIyKHTgBW90qfyYuYn69YMULGqE5ZhWpIrS+zyBEA0kDYbrzXJGNKSmR2wXsJ80hWKl0fQ2J8hlhBqHtsAuAdlkAOt7ieltFbVaf6vzV29cjOSXr4e83ofIoFsiBX2")
+        
+        let expectedHash = "CD0484ECA3E24ACC147584F9C9DA14124CF4FDAA0A8F78578DEB02B04B66988E"
+        XCTAssertEqual(block.hash, expectedHash)
     }
     
     func test_idempotentBlockV2() throws {

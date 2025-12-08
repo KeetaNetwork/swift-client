@@ -26,6 +26,9 @@ final class VoteStapleTests: XCTestCase {
         try block.compare(with: expectedBlock)
         XCTAssertEqual(block.rawData.operations.count, 1)
         
+        // Verify blocks hash
+        XCTAssertEqual(staple.blocksHash, "1A2738839B38C8E91582D57E3CB25E1A968BFAB8CA917FD7D1360402D911A782")
+        
         // Verify Send Operation
         let operation = try XCTUnwrap(block.rawData.operations.first as? SendOperation)
 
@@ -50,6 +53,12 @@ final class VoteStapleTests: XCTestCase {
         let issuers = staple.votes.map(\.issuer.publicKeyString)
         XCTAssertEqual(issuers, expectedIssuers, "Issuers different than expected:\n\(issuers)")
         XCTAssertTrue(staple.votes.allSatisfy { $0.permanent })
+    }
+    
+    func test_blocksWithNoFractionalSeconds() throws {
+        let binary = "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"
+        
+        let _ = try VoteStaple.create(from: binary)
     }
     
     func test_stapleWithArbitraryIntegersSize() throws {

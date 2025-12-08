@@ -96,7 +96,7 @@ public struct Account: Codable, Hashable {
     
     private func prepare(data: Data, options: SigningOptions) throws -> [UInt8] {
         if options.raw {
-            let data = data.bytes
+            let data = data.toBytes()
             if data.count != Hash.digestLength {
                 throw AccountError.invalidDataLength
             }
@@ -114,13 +114,16 @@ extension Account {
         case ED25519
         case NETWORK
         case TOKEN
+        case STORAGE
+        case MULTISIG = 7
         
         var utils: (KeyCreateable & Signable & Verifiable).Type {
             get throws {
                 switch self {
                 case .ECDSA_SECP256K1: EcDSA.self
                 case .ED25519: Ed25519.self
-                case .NETWORK, .TOKEN: IdentifierKeyPair.self
+                case .NETWORK, .TOKEN, .STORAGE: IdentifierKeyPair.self
+                case .MULTISIG: MultiSignatureKeyPair.self
                 }
             }
         }

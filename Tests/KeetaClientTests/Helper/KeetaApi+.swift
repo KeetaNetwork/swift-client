@@ -9,7 +9,7 @@ extension KeetaApi {
         let send = try SendOperation(amount: amount, to: toAccount, token: config.baseToken)
         
         let sendBlock = try BlockBuilder()
-            .start(from: previousBlockHash, network: config.networkID)
+            .start(from: previousBlockHash, network: config.network.id)
             .add(signer: fromAccount)
             .add(operation: send)
             .seal()

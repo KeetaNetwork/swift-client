@@ -4,13 +4,37 @@ import PotentCodables
 import BigInt
 
 public struct RawBlockData {
+    public enum Signer: Hashable {
+        case single(Account)
+        case multi(Account, [Signer])
+        
+        public var account: Account {
+            switch self {
+            case .single(let account): account
+            case .multi(let account, _): account
+            }
+        }
+        
+        func asn1Values() throws -> ASN1 {
+            switch self {
+            case .single(let account):
+                    .octetString(Data(account.publicKeyAndType))
+            case .multi(let account, let signers):
+                    .sequence([
+                        .octetString(Data(account.publicKeyAndType)),
+                        .sequence(try signers.map { try $0.asn1Values() })
+                    ])
+            }
+        }
+    }
+    
     public let version: Block.Version
     public let purpose: Block.Purpose
     public let idempotent: String?
     public let previous: String
     public let network: NetworkID
     public let subnet: SubnetID?
-    public let signer: Account
+    public let signer: Signer
     public let account: Account
     public let operations: [BlockOperation]
     public let created: Date
@@ -45,10 +69,10 @@ extension RawBlockData {
         let idempotent: ASN1? = idempotentData.map { .octetString($0) }
         
         let operations: [ASN1] = try operations.map { try $0.tagged() }
-        let signer = Data(signer.publicKeyAndType)
+        let signerAccount = Data(signer.account.publicKeyAndType)
         let account = Data(account.publicKeyAndType)
         
-        return switch version {
+        let result = switch version {
         case .v1:
             [
                 .integer(version.value),
@@ -56,8 +80,8 @@ extension RawBlockData {
                 asn1Subnet ?? .null,
                 idempotent,
                 .generalizedTime(ZonedDate(date: created, timeZone: .utc)),
-                .octetString(signer),
-                account != signer ? .octetString(account) : ASN1.null,
+                .octetString(signerAccount),
+                account != signerAccount ? .octetString(account) : ASN1.null,
                 .octetString(Data(previousBytes)),
                 .sequence(operations)
             ].compactMap { $0 }
@@ -70,10 +94,12 @@ extension RawBlockData {
                 .generalizedTime(ZonedDate(date: created, timeZone: .utc)),
                 .integer(purpose.value),
                 .octetString(account),
-                signer != account ? .octetString(signer) : ASN1.null,
+                signerAccount != account ? try signer.asn1Values() : ASN1.null,
                 .octetString(Data(previousBytes)),
                 .sequence(operations)
             ].compactMap { $0 }
         }
+        
+        return result
     }
 }

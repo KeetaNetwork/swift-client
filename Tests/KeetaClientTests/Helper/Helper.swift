@@ -50,3 +50,27 @@ extension Block {
         print("------------\n")
     }
 }
+
+extension BlockSignature {
+    func toHexString() -> String {
+        switch self {
+        case .single(let signature): signature.toHexString()
+        case .multi(let signatures): signatures.map { $0.toHexString() }.joined(separator: ",\n")
+        }
+    }
+}
+
+extension Array where Element: Equatable {
+    func isSubsequence(of other: [Element]) -> Bool {
+        guard !isEmpty else { return true }
+        var index = 0
+        
+        for element in other {
+            if element == self[safe: index] {
+                index += 1
+                if index == count { return true }
+            }
+        }
+        return false
+    }
+}

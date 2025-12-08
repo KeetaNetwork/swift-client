@@ -52,7 +52,7 @@ class ApiTests: XCTestCase {
             XCTAssertNil(senderBalance.currentHeadBlock)
             
             let sendBlock = try BlockBuilder(version: version)
-                .start(from: senderBalance.currentHeadBlock, network: config.networkID)
+                .start(from: senderBalance.currentHeadBlock, network: config.network.id)
                 .add(account: newAccount)
                 .add(operation: send)
                 .seal()
@@ -61,7 +61,7 @@ class ApiTests: XCTestCase {
             
             // Try to get new temporary votes for a different block
             let anotherSendBlock = try BlockBuilder(version: version)
-                .start(from: senderBalance.currentHeadBlock, network: config.networkID)
+                .start(from: senderBalance.currentHeadBlock, network: config.network.id)
                 .add(account: newAccount)
                 .add(operation: send)
                 .seal()
@@ -133,7 +133,7 @@ class ApiTests: XCTestCase {
         let senderBalance = try await api.balance(for: wellFundedAccount)
         
         let sendBlock = try BlockBuilder()
-            .start(from: senderBalance.currentHeadBlock, network: config.networkID)
+            .start(from: senderBalance.currentHeadBlock, network: config.network.id)
             .add(account: wellFundedAccount)
             .add(operation: send)
             .seal()
@@ -199,7 +199,7 @@ class ApiTests: XCTestCase {
             
             let send1 = try SendOperation(amount: BigInt(1), to: receiver, token: config.baseToken)
             let sendBlock1 = try BlockBuilder(version: version)
-                .start(from: nil, network: config.networkID)
+                .start(from: nil, network: config.network.id)
                 .add(account: sender)
                 .add(operation: send1)
                 .add(idempotent: idempotentKey)
@@ -213,7 +213,7 @@ class ApiTests: XCTestCase {
             
             let send2 = try SendOperation(amount: BigInt(2), to: receiver, token: config.baseToken)
             let sendBlock2 = try BlockBuilder(version: version)
-                .start(from: sendBlock1.hash, network: config.networkID)
+                .start(from: sendBlock1.hash, network: config.network.id)
                 .add(account: sender)
                 .add(operation: send2)
                 .add(idempotent: idempotentKey)
@@ -251,7 +251,7 @@ class ApiTests: XCTestCase {
         // Account 1 requests to receive token from account 2
         let receive = try ReceiveOperation(amount: 2, token: config.baseToken, from: account2, exact: true)
         let needToReceiveBlock = try BlockBuilder()
-            .start(from: nil, network: config.networkID)
+            .start(from: nil, network: config.network.id)
             .add(account: account1)
             .add(operation: receive)
             .seal()
@@ -259,7 +259,7 @@ class ApiTests: XCTestCase {
         // Account 2 publishes both his send block and the receive block
         let send = try SendOperation(amount: 2, to: account1, token: config.baseToken)
         let sendBlock = try BlockBuilder()
-            .start(from: nil, network: config.networkID)
+            .start(from: nil, network: config.network.id)
             .add(account: account2)
             .add(operation: send)
             .seal()
@@ -300,14 +300,14 @@ class ApiTests: XCTestCase {
         
         let create = CreateIdentifierOperation(identifier: customToken)
         let tokenCreationBlock = try BlockBuilder()
-            .start(from: nil, network: config.networkID)
+            .start(from: nil, network: config.network.id)
             .add(account: accountWithCustomToken)
             .add(operation: create)
             .seal()
         
         let mint = TokenAdminSupplyOperation(amount: BigInt(5), method: .add)
         let tokenMintBlock = try BlockBuilder()
-            .start(from: nil, network: config.networkID)
+            .start(from: nil, network: config.network.id)
             .add(account: customToken)
             .add(operation: mint)
             .add(signer: accountWithCustomToken)
@@ -317,7 +317,7 @@ class ApiTests: XCTestCase {
         
         let sendCustomToken = try SendOperation(amount: mint.amount, to: accountWithCustomToken, token: customToken)
         let tokenSendBlock = try BlockBuilder()
-            .start(from: tokenMintBlock.hash, network: config.networkID)
+            .start(from: tokenMintBlock.hash, network: config.network.id)
             .add(account: customToken)
             .add(operation: sendCustomToken)
             .add(signer: accountWithCustomToken)
@@ -328,21 +328,21 @@ class ApiTests: XCTestCase {
         // Account with custom tokens proposes a swap: 1 custom token in exchange for 2 base token
         let receive = try ReceiveOperation(amount: 2, token: config.baseToken, from: accountWithBaseToken, exact: true)
         let needToReceiveBlock = try BlockBuilder()
-            .start(from: result.feeBlockHash ?? tokenCreationBlock.hash, network: config.networkID)
+            .start(from: result.feeBlockHash ?? tokenCreationBlock.hash, network: config.network.id)
             .add(account: accountWithCustomToken)
             .add(operation: receive)
             .seal()
         
         let accountWithCustomTokenSend = try SendOperation(amount: 1, to: accountWithBaseToken, token: customToken)
         let accountWithCustomTokenSendBlock = try BlockBuilder()
-            .start(from: needToReceiveBlock.hash, network: config.networkID)
+            .start(from: needToReceiveBlock.hash, network: config.network.id)
             .add(account: accountWithCustomToken)
             .add(operation: accountWithCustomTokenSend)
             .seal()
         
         let accountWithBaseTokenSend = try SendOperation(amount: 2, to: accountWithCustomToken, token: config.baseToken)
         let accountWithBaseTokenSendBlock = try BlockBuilder()
-            .start(from: nil, network: config.networkID)
+            .start(from: nil, network: config.network.id)
             .add(account: accountWithBaseToken)
             .add(operation: accountWithBaseTokenSend)
             .seal()
@@ -383,11 +383,11 @@ class ApiTests: XCTestCase {
         let setInfo = SetInfoOperation(
             name: "account_info_\(String.randomLetter())\(String.randomLetter())\(String.randomLetter())".uppercased(),
             description: "swift-core test",
-            metaData: Date().readable()
+            metaData: Date().readable().replacingOccurrences(of: ".", with: "/")
         )
         
         let setInfoBlock = try BlockBuilder()
-            .start(from: nil, network: config.networkID)
+            .start(from: nil, network: config.network.id)
             .add(account: newAccount)
             .add(operations: setInfo)
             .seal()
@@ -414,7 +414,7 @@ class ApiTests: XCTestCase {
         let send = try SendOperation(amount: BigInt(10), to: recipient, token: config.baseToken)
         
         let sendBlock = try BlockBuilder()
-            .start(from: nil, network: config.networkID)
+            .start(from: nil, network: config.network.id)
             .add(account: account)
             .add(operation: send)
             .seal()
@@ -444,7 +444,7 @@ class ApiTests: XCTestCase {
         
         let create = CreateIdentifierOperation(identifier: newToken)
         let tokenCreationBlock = try BlockBuilder()
-            .start(from: nil, network: config.networkID)
+            .start(from: nil, network: config.network.id)
             .add(account: tokenOwner)
             .add(operation: create)
             .seal()
@@ -452,7 +452,7 @@ class ApiTests: XCTestCase {
         let mint = TokenAdminSupplyOperation(amount: BigInt(50), method: .add)
         let info = SetInfoOperation(name: "TEST", description: Date().readable(), defaultPermission: .init(baseFlag: .ACCESS))
         let tokenMintBlock = try BlockBuilder()
-            .start(from: nil, network: config.networkID)
+            .start(from: nil, network: config.network.id)
             .add(account: newToken)
             .add(operations: mint, info)
             .add(signer: tokenOwner)
@@ -468,7 +468,7 @@ class ApiTests: XCTestCase {
         // Burn some of the token supply
         let burn = TokenAdminSupplyOperation(amount: BigInt(10), method: .subtract)
         let tokenBurnBlock = try BlockBuilder()
-            .start(from: tokenMintBlock.hash, network: config.networkID)
+            .start(from: tokenMintBlock.hash, network: config.network.id)
             .add(account: newToken)
             .add(operation: burn)
             .add(signer: tokenOwner)
@@ -486,7 +486,7 @@ class ApiTests: XCTestCase {
         let send = try SendOperation(amount: BigInt(5), to: recipient, token: newToken)
         
         let tokenSendBlock = try BlockBuilder()
-            .start(from: tokenBurnBlock.hash, network: config.networkID)
+            .start(from: tokenBurnBlock.hash, network: config.network.id)
             .add(account: newToken)
             .add(operation: send)
             .add(signer: tokenOwner)
@@ -511,7 +511,7 @@ class ApiTests: XCTestCase {
         let sendReturn = try SendOperation(amount: BigInt(2), to: tokenOwner, token: newToken)
         
         let returnTokensBlock = try BlockBuilder()
-            .start(from: recipientBalance.currentHeadBlock, network: config.networkID)
+            .start(from: recipientBalance.currentHeadBlock, network: config.network.id)
             .add(account: recipient)
             .add(operation: sendReturn)
             .seal()

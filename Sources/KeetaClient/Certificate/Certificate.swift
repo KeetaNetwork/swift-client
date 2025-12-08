@@ -272,7 +272,7 @@ public struct Certificate {
         guard let voteSignature = sequence[2].bitStringValue else {
             throw CertificateError.invalidSignatureDataBitString
         }
-        let signature = voteSignature.bytes.bytes
+        let signature = voteSignature.bytes.toBytes()
         
         guard try issuer.verify(data: toVerify, signature: signature, options: .init(raw: true, forCert: true)) else {
             throw CertificateError.invalidSignatureData

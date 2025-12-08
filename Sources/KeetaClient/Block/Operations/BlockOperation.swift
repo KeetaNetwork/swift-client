@@ -5,7 +5,7 @@ import BigInt
 public protocol BlockOperation {
     var operationType: BlockOperationType { get }
     
-    func asn1Values() -> [ASN1]
+    func asn1Values() throws -> [ASN1]
     
     init(from sequence: [ASN1]) throws
 }

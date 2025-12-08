@@ -9,6 +9,12 @@ public enum BlockError: Error, Equatable {
     case invalidNetwork
     case invalidDate
     case invalidSigner
+    case invalidMultiSigSequence
+    case invalidMultiSigAccount
+    case invalidMultiSigSigners
+    case missingMultiSigSigners
+    case missingMultiSigSignatures
+    case invalidMultiSigSignersDepth
     case invalidHash
     case invalidOperationsSequence
     case redundantAccount

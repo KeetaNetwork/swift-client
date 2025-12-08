@@ -45,7 +45,7 @@ public final class BlockBuilder {
         network: NetworkConfig,
         previous: String?
     ) throws -> Block {
-        try feeBlock(for: voteStape, account: account, networkId: network.networkID, baseToken: network.baseToken, previous: previous)
+        try feeBlock(for: voteStape, account: account, networkId: network.network.id, baseToken: network.baseToken, previous: previous)
     }
     
     public static func feeBlock(
@@ -125,6 +125,14 @@ public final class BlockBuilder {
     public init(version: Block.Version = .latest, purpose: Block.Purpose = .generic) {
         self.version = version
         self.purpose = purpose
+    }
+    
+    public func start(from previous: String?, config: NetworkConfig, subnet: SubnetID? = nil) -> BlockBuilder {
+        start(from: previous, network: config.network.id, subnet: subnet)
+    }
+    
+    public func start(from previous: String?, network: NetworkAlias, subnet: SubnetID? = nil) -> BlockBuilder {
+        start(from: previous, network: network.id, subnet: subnet)
     }
     
     public func start(from previous: String?, network: NetworkID, subnet: SubnetID? = nil) -> BlockBuilder {
@@ -212,12 +220,12 @@ public final class BlockBuilder {
             previous: previousHash,
             network: network,
             subnet: subnet,
-            signer: signer,
+            signer: .single(signer),
             account: account,
             operations: operations,
             created: created
         )
         
-        return try Block(from: rawBlock, opening: previous == nil, signature: signature.map { .single($0) })
+        return try Block(from: rawBlock, opening: previous == nil, signature: signature)
     }
 }

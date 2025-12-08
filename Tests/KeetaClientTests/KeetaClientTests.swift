@@ -50,6 +50,30 @@ final class KeetaClientTests: XCTestCase {
         }
     }
     
+    func test_deterministicTransactionIds() async throws {
+        let client = KeetaClient(network: .test, account: wellFundedAccount)
+        
+        let all1 = try await client.transactions()
+        let all2 = try await client.transactions()
+        
+        XCTAssertEqual(all1, all2)
+    }
+    
+    func test_transactionsPagination() async throws {
+        let client = KeetaClient(network: .test, account: wellFundedAccount)
+        
+        let all = try await client.transactions(limit: 5)
+        
+        guard all.count >= 5 else {
+            XCTFail("Received less transactions than expected: \(all.count)")
+            return
+        }
+        
+        let subPage = try await client.transactions(limit: 3, startBlocksHash: all[1].stapleHash)
+        
+        XCTAssertTrue(subPage.isSubsequence(of: all), "Expected \(subPage) to be a subset of \(all)")
+    }
+    
     func test_transactions() async throws {
         let account1 = try AccountBuilder.new()
         let account2 = try AccountBuilder.new()
@@ -88,11 +112,10 @@ final class KeetaClientTests: XCTestCase {
         let client = KeetaClient(network: .test)
         let feeTransactions = try await client.transactions(for: feeAccount)
         let expectedFeesPaidTransferCount = 8 // 2 blocks published with 4 reps used to reach quorum
-        XCTAssertEqual(feeTransactions.count, 1 + expectedFeesPaidTransferCount) // 1 incoming fund transaction
-        XCTAssertEqual(feeTransactions.count(where: { $0.amount == 110_100 }), expectedFeesPaidTransferCount)
-        XCTAssertEqual(feeTransactions.count(where: { $0.isNetworkFee }), expectedFeesPaidTransferCount)
-        XCTAssertEqual(feeTransactions.count(where: { $0.from.publicKeyString == feeAccount.publicKeyString }), expectedFeesPaidTransferCount)
-        XCTAssertEqual(feeTransactions.last?.amount, initialFeeFunds)
+        XCTAssertEqual(feeTransactions.count(where: { $0.send?.amount == 110_100 }), expectedFeesPaidTransferCount)
+        XCTAssertEqual(feeTransactions.count(where: { $0.send?.isNetworkFee == true }), expectedFeesPaidTransferCount)
+        XCTAssertEqual(feeTransactions.count(where: { $0.send?.from.publicKeyString == feeAccount.publicKeyString }), expectedFeesPaidTransferCount)
+        XCTAssertEqual(feeTransactions.last?.send?.amount, initialFeeFunds)
     }
     
     func test_tryToSwapBaseTokenWithoutFeeAccount() async throws {
@@ -201,7 +224,7 @@ final class KeetaClientTests: XCTestCase {
         // Request temporary votes for first block
         let send = try SendOperation(amount: 1, to: recipient, token: client.config.baseToken)
         let sendBlock1 = try BlockBuilder()
-            .start(from: nil, network: client.config.networkID)
+            .start(from: nil, config: client.config)
             .add(account: account)
             .add(operation: send)
             .seal()
@@ -210,7 +233,7 @@ final class KeetaClientTests: XCTestCase {
         
         // Try to get new temporary votes for a different block
         let anotherSendBlock = try BlockBuilder()
-            .start(from: nil, network: client.config.networkID)
+            .start(from: nil, config: client.config)
             .add(account: account)
             .add(operation: send)
             .seal()
@@ -293,7 +316,7 @@ final class KeetaClientTests: XCTestCase {
     // MARK: Helper
     
     private func assert(
-        _ transactions: [NetworkSendTransaction],
+        _ transactions: [NetworkTransaction],
         _ expected: [ExpectedTransaction],
         file: StaticString = #filePath,
         line: UInt = #line
@@ -303,7 +326,11 @@ final class KeetaClientTests: XCTestCase {
         for (index, expect) in expected.enumerated() {
             if transactions.indices.contains(index) {
                 let transaction = transactions[index]
-                XCTAssertTrue(expect.matches(transaction), "\(expect.pretty()) didn't match \(transaction.pretty())", file: file, line: line)
+                if let send = transaction.send {
+                    XCTAssertTrue(expect.matches(send), "\(expect.pretty()) didn't match \(send.pretty())", file: file, line: line)
+                } else {
+                    XCTFail("Invalid transaction type: \(transaction)", file: file, line: line)
+                }
             } else {
                 XCTFail("Transaction missing for \(expect.pretty())", file: file, line: line)
             }

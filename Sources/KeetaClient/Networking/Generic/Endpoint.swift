@@ -17,5 +17,5 @@ public enum RequestMethod: String {
     case post
     case put
     
-    var value: String { rawValue.uppercased() }
+    public var value: String { rawValue.uppercased() }
 }

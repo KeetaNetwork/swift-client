@@ -28,7 +28,7 @@ public final class KeetaApi: HTTPClient {
     }
     
     public convenience init(config: NetworkConfig) throws {
-        try self.init(reps: config.reps, networkId: config.networkID, baseToken: config.baseToken)
+        try self.init(reps: config.reps, networkId: config.network.id, baseToken: config.baseToken)
     }
     
     public init(
@@ -224,8 +224,8 @@ public final class KeetaApi: HTTPClient {
     }
     
     @discardableResult
-    public func publish(blocks: [Block], feeAccount: Account) async throws -> PublishResult {
-        try await publish(blocks: blocks) {
+    public func publish(blocks: [Block], quotes: [VoteQuote]? = nil, feeAccount: Account) async throws -> PublishResult {
+        try await publish(blocks: blocks, quotes: quotes) {
             try await BlockBuilder.feeBlock(for: $0, account: feeAccount, api: self)
         }
     }
@@ -369,9 +369,9 @@ public final class KeetaApi: HTTPClient {
         return .init(name: result.info.name, description: result.info.description, metadata: result.info.metadata, supply: supply)
     }
     
-    public func history(of account: Account, limit: Int = 50, startBlockHash: String? = nil) async throws -> [VoteStaple] {
+    public func history(of account: Account, limit: Int = 50, startBlocksHash: String? = nil) async throws -> [VoteStaple] {
         let repUrl = preferredRep.apiUrl
-        let request = KeetaEndpoint.history(for: account, limit: limit, startBlockHash: startBlockHash, baseUrl: repUrl)
+        let request = KeetaEndpoint.history(for: account, limit: limit, startBlocksHash: startBlocksHash, baseUrl: repUrl)
         let response: HistoryResponse = try await sendRequest(to: request)
         return try response.history.map { try VoteStaple.create(from: $0.voteStaple.binary) }
     }

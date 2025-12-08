@@ -111,7 +111,7 @@ public final class KeetaClient {
         let send = try SendOperation(amount: amount, to: toAccount, token: token, external: options?.memo)
         
         let sendBlock = try blockBuilder()
-            .start(from: balance.currentHeadBlock, network: config.networkID)
+            .start(from: balance.currentHeadBlock, network: config.network.id)
             .add(account: fromAccount)
             .add(operation: send)
             .add(idempotent: options?.idempotency)
@@ -156,24 +156,28 @@ public final class KeetaClient {
     
     // MARK: Transactions
     
-    public func transactions(limit: Int = 100, startBlockHash: String? = nil) async throws -> [NetworkSendTransaction] {
+    public func transactions(limit: Int = 100, startBlocksHash: String? = nil) async throws -> [NetworkTransaction] {
         guard let account else { throw KeetaClientError.missingAccount }
-        return try await transactions(for: account, limit: limit, startBlockHash: startBlockHash)
+        return try await transactions(for: account, limit: limit, startBlocksHash: startBlocksHash)
     }
     
-    public func transactions(for accountPubKey: String, limit: Int = 100, startBlockHash: String? = nil) async throws -> [NetworkSendTransaction] {
+    public func transactions(for accountPubKey: String, limit: Int = 100, startBlocksHash: String? = nil) async throws -> [NetworkTransaction] {
         let account = try AccountBuilder.create(fromPublicKey: accountPubKey)
-        return try await transactions(for: account, limit: limit, startBlockHash: startBlockHash)
+        return try await transactions(for: account, limit: limit, startBlocksHash: startBlocksHash)
     }
     
-    public func transactions(for account: Account, limit: Int = 100, startBlockHash: String? = nil) async throws -> [NetworkSendTransaction] {
-        let history = try await api.history(of: account, limit: limit, startBlockHash: startBlockHash)
+    public func transactions(for account: Account, limit: Int = 100, startBlocksHash: String? = nil) async throws -> [NetworkTransaction] {
+        let history = try await api.history(of: account, limit: limit, startBlocksHash: startBlocksHash)
         
-        var transactions = [NetworkSendTransaction]()
+        var transactions = [NetworkTransaction]()
         
         for staple in history {
+            var idIterator: UInt8 = 1
             for block in staple.blocks {
                 for operation in block.rawData.operations {
+                    
+                    let id: String = Hash.create(from: try staple.blocksHash.toBytes() + [idIterator])
+                    
                     switch operation.operationType {
                     case .send:
                         let send = try operation.to(SendOperation.self)
@@ -183,44 +187,44 @@ public final class KeetaClient {
                         // ignore send operations that aren't effecting the account's chain
                         if !isIncoming && block.rawData.account.publicKeyString != account.publicKeyString { continue }
                         
-                        transactions.append(
-                            NetworkSendTransaction(
-                                id: UUID().uuidString,
-                                blockHash: block.hash,
-                                amount: send.amount,
-                                from: isIncoming ? block.rawData.account : account,
-                                to: isIncoming ? account : toAccount,
-                                token: try Account(publicKeyAndType: send.token),
-                                isIncoming: isIncoming,
-                                isNetworkFee: block.rawData.purpose == .fee,
-                                created: block.rawData.created,
-                                memo: send.external
-                            )
+                        let sendTransaction = NetworkSendTransaction(
+                            id: id,
+                            blockHash: block.hash,
+                            stapleHash: staple.blocksHash,
+                            amount: send.amount,
+                            from: isIncoming ? block.rawData.account : account,
+                            to: isIncoming ? account : toAccount,
+                            token: try Account(publicKeyAndType: send.token),
+                            isIncoming: isIncoming,
+                            isNetworkFee: block.rawData.purpose == .fee,
+                            created: block.rawData.created,
+                            memo: send.external
                         )
+                        transactions.append(.send(sendTransaction))
                     case .receive:
                         let receive = try operation.to(ReceiveOperation.self)
                         let fromAccount = try Account(publicKeyAndType: receive.from)
-                        let isIncoming = fromAccount.publicKeyString == account.publicKeyString
+                        let isFromAccount = fromAccount.publicKeyString == account.publicKeyString
+                        let isToAccount = block.rawData.account.publicKeyString == account.publicKeyString
                         
                         // ignore receive operations that aren't effecting the account's chain
-                        if !isIncoming && block.rawData.account.publicKeyString != account.publicKeyString { continue }
+                        guard isFromAccount || isToAccount else { continue }
                         
-                        transactions.append(
-                            NetworkSendTransaction(
-                                id: UUID().uuidString,
-                                blockHash: block.hash,
-                                amount: receive.amount,
-                                from: isIncoming ? block.rawData.account : fromAccount,
-                                to: isIncoming ? fromAccount : block.rawData.account,
-                                token: try Account(publicKeyAndType: receive.token),
-                                isIncoming: isIncoming,
-                                isNetworkFee: false,
-                                created: block.rawData.created,
-                                memo: nil
-                            )
+                        let receiveTransaction = NetworkReceiveTransaction(
+                            id: id,
+                            blockHash: block.hash,
+                            stapleHash: staple.blocksHash,
+                            amount: receive.amount,
+                            from: fromAccount,
+                            to: block.rawData.account,
+                            token: try Account(publicKeyAndType: receive.token),
+                            created: block.rawData.created
                         )
+                        transactions.append(.receive(receiveTransaction))
                     default: break
                     }
+                    
+                    idIterator += 1
                 }
             }
         }
@@ -247,7 +251,7 @@ public final class KeetaClient {
         let accountHeadblock = try await api.balance(for: account).currentHeadBlock
         
         let accountSendReceiveBlock = try blockBuilder()
-            .start(from: accountHeadblock, network: config.networkID)
+            .start(from: accountHeadblock, network: config.network.id)
             .add(account: account)
             .add(operations: receive, send)
             .seal()
@@ -255,7 +259,7 @@ public final class KeetaClient {
         let otherAccountHeadblock = try await api.balance(for: otherAccount).currentHeadBlock
         let otherAccountTokenSend = try SendOperation(amount: ask.amount, to: account, token: ask.token)
         let otherAccountTokenSendBlock = try blockBuilder()
-            .start(from: otherAccountHeadblock, network: config.networkID)
+            .start(from: otherAccountHeadblock, network: config.network.id)
             .add(account: otherAccount)
             .add(operation: otherAccountTokenSend)
             .seal()
@@ -296,7 +300,7 @@ public final class KeetaClient {
 
         let create = CreateIdentifierOperation(identifier: token)
         let tokenCreationBlock = try blockBuilder()
-            .start(from: accountHeadblock, network: config.networkID)
+            .start(from: accountHeadblock, network: config.network.id)
             .add(account: account)
             .add(operation: create)
             .seal()
@@ -312,7 +316,7 @@ public final class KeetaClient {
         )
 
         let tokenMintBlock = try blockBuilder()
-            .start(from: nil, network: config.networkID)
+            .start(from: nil, config: config)
             .add(account: token)
             .add(operations: mint, info)
             .add(signer: account)
