@@ -1,11 +1,11 @@
-// swift-tools-version:5.5
+// swift-tools-version:5.10
 // The swift-tools-version declares the minimum version of Swift required to build this package.
 
 import PackageDescription
 
 let package = Package(
     name: "KeetaClient",
-    platforms: [.iOS("15.0"), .macOS(.v11)],
+    platforms: [.iOS("16.0"), .macOS(.v13)],
     products: [
         // Products define the executables and libraries a package produces, and make them visible to other packages.
         .library(
@@ -19,6 +19,7 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-asn1.git", from: "1.3.0"),
         .package(url: "https://github.com/krzyzanowskim/CryptoSwift.git", .upToNextMajor(from: "1.8.5")),
         .package(url: "https://github.com/KeetaNetwork/PotentCodables.git", branch: "der-generalized-time-omit-zeros"),
+//        .package(path: "../PotentCodables"),
         .package(url: "https://github.com/bitmark-inc/bip39-swift.git", from: "1.0.1"),
         .package(url: "https://github.com/norio-nomura/Base32.git", from: "0.5.4")
     ],
@@ -39,6 +40,10 @@ let package = Package(
             ]),
         .testTarget(
             name: "KeetaClientTests",
-            dependencies: ["KeetaClient"]),
+            dependencies: ["KeetaClient"],
+            resources: [
+                .process("Resources")
+            ]
+        )
     ]
 )

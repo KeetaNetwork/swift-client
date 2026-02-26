@@ -9,6 +9,7 @@ public enum CertificateError: Error {
     case invalidASN1SequenceLength
     case invalidCertificateSequence
     case invalidCertificateSequenceLength
+    case invalidCertificateAlgorithmSequence
     case invalidCertificateValue
     case invalidSignatureInfoOID
     case unknownSignatureInfoOID(String)
@@ -16,7 +17,6 @@ public enum CertificateError: Error {
     case invalidValiditySequenceLength
     case invalidValidityData
     case invalidValidity
-    case invalidSubjectData
     case invalidVersion
     case serialMismatch
     case invalidSignatureInfoSequence
@@ -29,6 +29,7 @@ public enum CertificateError: Error {
     case invalidSignatureData
     case signatureInformationMismatch
     case unsupportedSignatureScheme
+    case signatureAlgorithmMismatch
     case issuerSignatureSchemeMismatch
     case invalidExtensions
 }
@@ -104,19 +105,42 @@ public enum CertificateError: Error {
  */
 
 // X.509v3 Certificates
-public struct Certificate {
+public struct Certificate: Hashable {
+    
+    public enum Issuer: Hashable {
+        case account(Account)
+        case common(String)
+        
+        var display: String {
+            switch self {
+            case .account(let account):
+                account.publicKeyString
+            case .common(let value):
+                value
+            }
+        }
+    }
+    
+    public struct Subject: Hashable {
+        public let name: String
+        public let account: Account
+    }
+    
     public let id: String
     public let hash: String
     public let version: BigInt
-    public let issuer: Account
+    public let issuer: Issuer
     public let serial: Serial
+    public let subject: Subject
     public let validityFrom: Date
     public let validityTo: Date
     public let signature: Signature
     public let permanent: Bool
     public let extensions: [OID: Extension]
+    public let intermediates: [Certificate]?
+    private let data: Data
     
-    public struct Extension {
+    public struct Extension: Hashable {
         public let data: ASN1
         public let critical: Bool
         
@@ -126,15 +150,32 @@ public struct Certificate {
         }
     }
     
-    private let data: Data
-    
     public static let version = BigInt(2) // v3
     
-    public static func create(from base64: String) throws -> Self {
-        guard let data = Data(base64Encoded: base64) else {
+    static let header = "-----BEGIN CERTIFICATE-----"
+    static let footer = "-----END CERTIFICATE-----"
+    
+    public static func create(from pem: String, intermediates: [String]? = nil) throws -> Self {
+        let intermediates = try intermediates?.map { try toData($0) }
+        return try Certificate(from: toData(pem), intermediates: intermediates)
+    }
+    
+    public static func toData(_ pem: String) throws -> Data {
+        guard let data = Data(base64Encoded: normalize(pem), options: .ignoreUnknownCharacters) else {
             throw VoteStapleError.invalidData
         }
-        return try .init(from: data)
+        return data
+    }
+    
+    public static func normalize(_ pem: String) -> String {
+        if pem.contains(header) {
+            pem
+                .replacingOccurrences(of: header, with: "")
+                .replacingOccurrences(of: footer, with: "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        } else {
+            pem
+        }
     }
     
     static func isPermanent(validTo: Date) -> Bool {
@@ -143,7 +184,7 @@ public struct Certificate {
         return validTo > Date().addingTimeInterval(permanentVoteThreshold)
     }
     
-    public init(from data: Data) throws {
+    public init(from data: Data, intermediates: [Data]? = nil) throws {
         let asn1 = try ASN1Serialization.asn1(fromDER: data)
         
         guard let sequence = asn1.first?.sequenceValue else {
@@ -155,25 +196,30 @@ public struct Certificate {
             throw CertificateError.invalidASN1SequenceLength
         }
         
-        /*
-         The contents of the X.509 certificate signed area
-         */
-        guard let voteContent = sequence[0].sequenceValue else {
+        // The contents of the X.509 certificate signed area
+        guard let certContent = sequence[0].sequenceValue else {
             throw CertificateError.invalidCertificateSequence
         }
-        guard voteContent.count == 8 else {
+        guard certContent.count == 8 else {
             throw CertificateError.invalidCertificateSequenceLength
         }
         
-        guard let versionValue = voteContent[0].taggedValue,
-              let serial = voteContent[1].integerValue,
-              let signatureInfo = voteContent[2].sequenceValue,
-              let issuerWrapper = voteContent[3].sequenceValue,
-              let validityInfo = voteContent[4].sequenceValue,
-            let subjectWrapper = voteContent[5].sequenceValue,
-            // voteContent[6].sequenceValue // Subject Public Key: We don't use this information
-            let extensionsArea = voteContent[7].taggedValue else {
+        guard let versionValue = certContent[0].taggedValue,
+              let serial = certContent[1].integerValue,
+              let signatureInfo = certContent[2].sequenceValue,
+              let issuerWrapper = certContent[3].sequenceValue,
+              let validityInfo = certContent[4].sequenceValue,
+            let subjectWrapper = certContent[5].sequenceValue,
+            let subjectPublicKey = certContent[6].sequenceValue,
+            let extensionsArea = certContent[7].taggedValue else {
             throw CertificateError.invalidCertificateValue
+        }
+        
+        guard let signatureAlgorithm = sequence[1].sequenceValue else {
+            throw CertificateError.invalidCertificateAlgorithmSequence
+        }
+        guard signatureInfo == signatureAlgorithm else {
+            throw CertificateError.signatureAlgorithmMismatch
         }
         
         // Validate version
@@ -207,14 +253,20 @@ public struct Certificate {
         guard let issuerKey = issuerContent[.commonName] else {
             throw CertificateError.invalidIssuerData
         }
-        let issuer = try AccountBuilder.create(fromPublicKey: issuerKey)
+        
+        let issuer: Issuer = if let account = try? AccountBuilder.create(fromPublicKey: issuerKey) {
+            .account(account)
+        } else {
+            .common(issuerKey)
+        }
         
         // Validity period
         guard validityInfo.count == 2 else {
             throw CertificateError.invalidValiditySequenceLength
         }
-        guard let validFrom = validityInfo[0].generalizedTimeValue?.zonedDate.utcDate,
-              let validTo = validityInfo[1].generalizedTimeValue?.zonedDate.utcDate else {
+        
+        guard let validFrom = (validityInfo[0].generalizedTimeValue?.zonedDate ?? validityInfo[0].utcTimeValue?.zonedDate)?.utcDate,
+              let validTo = (validityInfo[1].generalizedTimeValue?.zonedDate ?? validityInfo[1].utcTimeValue?.zonedDate)?.utcDate else {
             throw CertificateError.invalidValidityData
         }
         
@@ -227,11 +279,17 @@ public struct Certificate {
         
         // Subject
         let subjectContent = ASN1DistinguishedNames.find(in: subjectWrapper)
-        guard let subjectSeral = subjectContent[.serialNumber] else {
-            throw CertificateError.invalidSubjectData
-        }
-        guard serial == BigInt(hex: "0x\(subjectSeral)") else {
-            throw CertificateError.serialMismatch
+        
+        let subject = Subject(
+            name: subjectContent.map { match, value in "\(match.description)=\(value)" }.joined(separator: ", "),
+            account: try Account.create(from: subjectPublicKey)
+        )
+        
+        // Validate subject serial number
+        if let subjectSeral = subjectContent[.serialNumber] {
+            guard serial == BigInt(hex: "0x\(subjectSeral)") else {
+                throw CertificateError.serialMismatch
+            }
         }
         
         // Signature data
@@ -252,32 +310,6 @@ public struct Certificate {
             throw CertificateError.signatureInformationMismatch
         }
         
-        let toVerify: Data
-        
-        switch voteSignatureInfoOid {
-        case .ecdsaWithSHA3_256:
-            guard issuer.keyAlgorithm == .ECDSA_SECP256K1 else {
-                throw CertificateError.issuerSignatureSchemeMismatch
-            }
-            toVerify = Hash.create(from: tbsCertificate)
-        case .ed25519:
-            guard issuer.keyAlgorithm == .ED25519 else {
-                throw CertificateError.issuerSignatureSchemeMismatch
-            }
-            toVerify = tbsCertificate
-        default: throw CertificateError.unsupportedSignatureScheme
-        }
-        
-        // Get the signature
-        guard let voteSignature = sequence[2].bitStringValue else {
-            throw CertificateError.invalidSignatureDataBitString
-        }
-        let signature = voteSignature.bytes.toBytes()
-        
-        guard try issuer.verify(data: toVerify, signature: signature, options: .init(raw: true, forCert: true)) else {
-            throw CertificateError.invalidSignatureData
-        }
-        
         // Extensions
         let asn1Extensions = try ASN1Serialization.asn1(fromDER: extensionsArea.data)
         guard let extensionsSequence = asn1Extensions.first?.sequenceValue else {
@@ -290,29 +322,65 @@ public struct Certificate {
                   extensionSequence.count == 2 || extensionSequence.count == 3 else {
                 throw VoteError.invalidExtensionSequence
             }
-            guard let oidValue = extensionSequence[0].objectIdentifierValue,
-                    let oid = OID(rawValue: oidValue.description) else {
-                throw VoteError.invalidExtensionOID
+            guard let oidValue = extensionSequence[0].objectIdentifierValue else {
+                throw VoteError.invalidExtensionOIDValue
+            }
+            
+            guard let oid = OID(rawValue: oidValue.description) else {
+                throw VoteError.invalidExtensionOID(oidValue.description)
             }
             
             let critical: Bool
-            if extensionSequence.count == 2 {
+            if extensionSequence.count == 3 {
                 guard let criticalCheck = extensionSequence[1].booleanValue else {
                     throw VoteError.invalidExtensionCriticalCheck
                 }
                 critical = criticalCheck
             } else {
-                critical = true
+                critical = false
             }
             
-            guard let extensionData = extensionSequence[safe: 2] else {
+            guard let extensionData = extensionSequence.last else {
                 throw VoteError.invalidHashDataExtension
             }
             extensions[oid] = .init(data: extensionData, critical: critical)
         }
         
+        // Verify signature
+        let toVerify: Data
+        
+        switch voteSignatureInfoOid {
+        case .ecdsaWithSHA3_256:
+            if case .account(let issuer) = issuer {
+                guard issuer.keyAlgorithm == .ECDSA_SECP256K1 else {
+                    throw CertificateError.issuerSignatureSchemeMismatch
+                }
+            }
+            toVerify = Hash.create(from: tbsCertificate)
+        case .ed25519:
+            if case .account(let issuer) = issuer {
+                guard issuer.keyAlgorithm == .ED25519 else {
+                    throw CertificateError.issuerSignatureSchemeMismatch
+                }
+            }
+            toVerify = tbsCertificate
+        default: throw CertificateError.unsupportedSignatureScheme
+        }
+        
+        // Get the signature
+        guard let voteSignature = sequence[2].bitStringValue else {
+            throw CertificateError.invalidSignatureDataBitString
+        }
+        let signature = voteSignature.bytes.toBytes()
+        
+        if case .account(let issuer) = issuer {
+            guard try issuer.verify(data: toVerify, signature: signature, options: .init(raw: true, forCert: true)) else {
+                throw CertificateError.invalidSignatureData
+            }
+        }
+        
         // Construct certificate
-        self.id = "ID=\(issuer.publicKeyString)/Serial=\(serial)"
+        self.id = "ID=\(issuer.display)/Serial=\(serial)"
         hash = Hash.create(from: data.bytes)
         self.version = version
         self.serial = serial
@@ -321,8 +389,10 @@ public struct Certificate {
         self.validityFrom = validFrom
         self.validityTo = validTo
         self.permanent = permanent
+        self.subject = subject
         self.extensions = extensions
         self.data = data
+        self.intermediates = try intermediates?.map { try Certificate(from: $0, intermediates: nil) }
     }
     
     public func toData() -> Data {

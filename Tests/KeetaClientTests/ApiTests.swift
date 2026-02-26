@@ -32,6 +32,78 @@ class ApiTests: XCTestCase {
         XCTAssertTrue(balance.rawBalances[config.baseToken.publicKeyString, default: 0] > 0)
     }
     
+    func test_fetchCertificates() async throws {
+        let api = try createAPI()
+        
+        let account = try AccountBuilder.create(
+            fromPublicKey: "keeta_aabg2lkwuy4gvzr44cniihdmwzinfuunqv4qgsuhbq7jpt4qms622tldjbdexwy"
+        )
+        let fetchedAll = try await api.certificates(for: account)
+        XCTAssertTrue(fetchedAll.count > 20)
+        
+        let first = try XCTUnwrap(fetchedAll.first)
+        let fetchedSpecific = try await api.certificate(for: account, hash: first.hash)
+        
+        XCTAssertEqual(first, fetchedSpecific)
+    }
+        
+    func test_modifyCertificates() async throws {
+        let api = try createAPI()
+        
+        let seed = "5fb3a1e05f46b8ea4dc56b95f575229586b225a335d8d06f723e544dac5bdc64"
+        let certAccount = try AccountBuilder.create(fromSeed: seed, index: 0)
+        
+        // Fund sender
+        try await api.send(amount: 800_000, from: wellFundedAccount, to: certAccount, config: config)
+        
+        // Add certificate for account 'keeta_aabx2vtqjhfzjm7vmn2jtqdhzx36brozcrs5ovmo2wo5lrdafzw7cmoq23djbzq'
+        let localCertificate = try Certificate.create(from: """
+            -----BEGIN CERTIFICATE-----
+                MIIB0DCCAXagAwIBAgIBATALBglghkgBZQMEAwowUDFOMEwGA1UEAxZFa2VldGFf
+                YWFieDJ2dHFqaGZ6am03dm1uMmp0cWRoengzNmJyb3pjcnM1b3ZtbzJ3bzVscmRh
+                Znp3N2Ntb3EyM2RqYnpxMB4XDTI0MTEwMTE2MDQ0M1oXDTI0MTEwMjE2MDQ0M1ow
+                UDFOMEwGA1UEAxZFa2VldGFfYWFieDJ2dHFqaGZ6am03dm1uMmp0cWRoengzNmJy
+                b3pjcnM1b3ZtbzJ3bzVscmRhZnp3N2Ntb3EyM2RqYnpxMDYwEAYHKoZIzj0CAQYF
+                K4EEAAoDIgADfVZwScuUs/VjdJnAZ8334MXZFGXXVY7VndXEYC5t8TGjYzBhMA8G
+                A1UdEwEB/wQFMAMBAf8wDgYDVR0PAQH/BAQDAgDGMB8GA1UdIwQYMBaAFF8a+R9T
+                IDOFQDslLk8zwia8nyIHMB0GA1UdDgQWBBRfGvkfUyAzhUA7JS5PM8ImvJ8iBzAL
+                BglghkgBZQMEAwoDRwAwRAIgfNPiPH6neCaq7nmqvW5cq3D/LptuSyGA36Q4nnQp
+                LsICICsHBxM+W6mtJR9LIUNfyuJrVh6k//ZxwfT2GtbaofGS
+                -----END CERTIFICATE-----
+            """)
+        
+        let addOperation = ModifyCertificateOperation(operation: .add(localCertificate))
+        
+        let addBlock = try BlockBuilder()
+            .start(from: nil, network: config.network.id)
+            .add(account: certAccount)
+            .add(operation: addOperation)
+            .seal()
+        
+        let addPublishResult = try await api.publish(blocks: [addBlock], feeAccount: certAccount)
+        
+        // Fetch certificate from chain
+        var allCertificates = try await api.certificates(for: certAccount)
+        
+        XCTAssertEqual(allCertificates.count, 1)
+        let fetchedCertificate = try XCTUnwrap(allCertificates.first)
+        XCTAssertEqual(fetchedCertificate, localCertificate)
+        
+        // Remove certificate from account
+        let removeOperation = ModifyCertificateOperation(operation: .remove(hash: fetchedCertificate.hash))
+        
+        let removeBlock = try BlockBuilder()
+            .start(from: addPublishResult.feeBlockHash, network: config.network.id)
+            .add(account: certAccount)
+            .add(operation: removeOperation)
+            .seal()
+        
+        try await api.publish(blocks: [removeBlock], feeAccount: certAccount)
+        
+        allCertificates = try await api.certificates(for: certAccount)
+        XCTAssertEqual(allCertificates, [])
+    }
+    
     func test_recoverAccounts() async throws {
         for version in Block.Version.all {
             let api = try createAPI()
@@ -433,6 +505,87 @@ class ApiTests: XCTestCase {
         )
     }
     
+    func test_modifyPermissionSendOnBehalf() async throws {
+        let api = try createAPI()
+        
+        let owner = try AccountBuilder.new()
+        let other = try AccountBuilder.new()
+        
+        // Retrieve granted permissions from network
+        let initialGrantedPermissions = try await api.grantedPermissions(of: owner)
+        XCTAssertEqual(initialGrantedPermissions, [])
+        
+        try await api.send(amount: 3_600_000, from: wellFundedAccount, to: owner, config: config)
+        
+        let modifyPermission = ModifyPermissionsOperation(
+            principal: other,
+            method: .set,
+            permission: Permission(baseFlags: [.ACCESS, .SEND_ON_BEHALF])
+        )
+        
+        let modifyBlock = try BlockBuilder()
+            .start(from: nil, network: config.network.id)
+            .add(account: owner)
+            .add(operation: modifyPermission)
+            .seal()
+        
+        try await api.publish(blocks: [modifyBlock], feeAccount: owner)
+        
+        let history = try await api.history(of: owner)
+        let modifyHistoryBlock = try XCTUnwrap(history.first?.blocks.first)
+        
+        let operation = try XCTUnwrap(modifyHistoryBlock.rawData.operations.first)
+        let parsed = try operation.to(ModifyPermissionsOperation.self)
+        
+        XCTAssertEqual(parsed.permission, modifyPermission.permission)
+        
+        // Retrieve granted permissions from network
+        let grantedPermissions = try await api.grantedPermissions(of: owner)
+        XCTAssertEqual(grantedPermissions.count, 1)
+        let grantedPermission = try XCTUnwrap(grantedPermissions.first)
+        XCTAssertEqual(grantedPermission.principal.publicKeyString, other.publicKeyString)
+        XCTAssertEqual(grantedPermission.target?.publicKeyString, owner.publicKeyString)
+        XCTAssertEqual(grantedPermission.permission, modifyPermission.permission)
+        
+        // Retrieve received permissions from network
+        let receivedPermissions = try await api.permissionsReceived(for: other)
+        
+        XCTAssertEqual(receivedPermissions.count, 1)
+        let receivedPermission = try XCTUnwrap(receivedPermissions.first)
+        XCTAssertEqual(receivedPermission.principal.publicKeyString, other.publicKeyString)
+        XCTAssertEqual(receivedPermission.target?.publicKeyString, owner.publicKeyString)
+        XCTAssertEqual(receivedPermission.permission, modifyPermission.permission)
+        
+        // Ensure both endpoints return the same data
+        XCTAssertEqual(grantedPermissions, receivedPermissions)
+        
+        let ownerBalanceBeforeSend = try await api.balance(for: owner)
+        
+        // Send owner funds using the new authorized account
+        let recipient = try AccountBuilder.new()
+        let send = try SendOperation(amount: BigInt(10), to: recipient, token: config.baseToken)
+        
+        let ownerLastBlockHash = history.first?.blocks.last?.hash
+        let sendBlock = try BlockBuilder()
+            .start(from: ownerLastBlockHash, network: config.network.id)
+            .add(account: owner)
+            .add(operation: send)
+            .add(signer: other)
+            .seal()
+        
+        try await api.publish(blocks: [sendBlock], feeAccount: owner)
+        
+        // Verify balances
+        let ownerBalanceAfterSend = try await api.balance(for: owner)
+        XCTAssertLessThanOrEqual(
+            ownerBalanceAfterSend.rawBalances[config.baseToken.publicKeyString, default: 0] + send.amount,
+            ownerBalanceBeforeSend.rawBalances[config.baseToken.publicKeyString, default: 0]
+        )
+        
+        let recipientBalance = try await api.balance(for: recipient)
+        XCTAssertEqual(send.amount, recipientBalance.rawBalances[config.baseToken.publicKeyString])
+    }
+    
     func test_createToken() async throws {
         let api = try createAPI()
         
@@ -450,7 +603,7 @@ class ApiTests: XCTestCase {
             .seal()
         
         let mint = TokenAdminSupplyOperation(amount: BigInt(50), method: .add)
-        let info = SetInfoOperation(name: "TEST", description: Date().readable(), defaultPermission: .init(baseFlag: .ACCESS))
+        let info = SetInfoOperation(name: "TEST", description: Date().readable(), defaultPermission: .init(baseFlags: [.ACCESS]))
         let tokenMintBlock = try BlockBuilder()
             .start(from: nil, network: config.network.id)
             .add(account: newToken)

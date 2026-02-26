@@ -11,6 +11,7 @@ public enum VoteQuoteError: Error {
 
 public struct VoteQuote {
     public let certificate: Certificate
+    public let issuer: Account
     public let blocks: [String] // Hashes
     public let fee: Fee
     private let data: Data
@@ -18,7 +19,6 @@ public struct VoteQuote {
     // Convenience getter
     public var id: String { certificate.id }
     public var hash: String { certificate.hash }
-    public var issuer: Account { certificate.issuer }
     public var serial: Serial { certificate.serial }
     public var validityFrom: Date { certificate.validityFrom }
     public var validityTo: Date { certificate.validityTo }
@@ -68,7 +68,13 @@ public struct VoteQuote {
             throw VoteQuoteError.missingFeeExtension
         }
         
+        let issuer: Account = switch certificate.issuer {
+            case .account(let account): account
+            case .common: throw VoteError.invalidSigner
+        }
+        
         self.certificate = certificate
+        self.issuer = issuer
         self.blocks = blocks
         self.fee = fee
         self.data = data

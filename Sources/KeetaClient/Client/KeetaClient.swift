@@ -273,17 +273,17 @@ public final class KeetaClient {
     // MARK: Token Management
     
     public func createToken(
-        name: String, supply: Double, decimals: Int = 9, description: String = "", feeAccount: Account? = nil
+        name: String, supply: Int, decimals: Int = 9, description: String = "", icon: TokenIcon? = nil, feeAccount: Account? = nil
     ) async throws -> Account {
-        try await createToken(name: name, supply: BigInt(supply), decimals: decimals, description: description, feeAccount: feeAccount)
+        try await createToken(name: name, supply: BigInt(supply), decimals: decimals, description: description, icon: icon, feeAccount: feeAccount)
     }
     
     public func createToken(
-        name: String, supply: BigInt, decimals: Int = 9, description: String = "", feeAccount: Account? = nil
+        name: String, supply: BigInt, decimals: Int = 9, description: String = "", icon: TokenIcon? = nil, feeAccount: Account? = nil
     ) async throws -> Account {
         guard let account else { throw KeetaClientError.missingAccount }
         return try await createToken(
-            for: account, name: name, supply: supply, decimals: decimals, description: description, feeAccount: feeAccount
+            for: account, name: name, supply: supply, decimals: decimals, description: description, icon: icon, feeAccount: feeAccount
         )
     }
     
@@ -293,6 +293,7 @@ public final class KeetaClient {
         supply: BigInt,
         decimals: Int = 9,
         description: String = "",
+        icon: TokenIcon? = nil,
         feeAccount: Account? = nil
     ) async throws -> Account {
         let accountHeadblock = try await api.balance(for: account).currentHeadBlock
@@ -311,12 +312,12 @@ public final class KeetaClient {
         let info = SetInfoOperation(
             name: name,
             description: description,
-            metaData: try MetaData(decimalPlaces: decimals).btoa(),
-            defaultPermission: .init(baseFlag: .ACCESS)
+            metaData: try MetaData(decimalPlaces: decimals, icon: icon).btoa(),
+            defaultPermission: .init(baseFlags: [.ACCESS])
         )
-
+        
         let tokenMintBlock = try blockBuilder()
-            .start(from: nil, config: config)
+            .start(from: nil, network: config.network.id)
             .add(account: token)
             .add(operations: mint, info)
             .add(signer: account)
@@ -358,7 +359,8 @@ public final class KeetaClient {
             name: accountInfo.name,
             description: accountInfo.description.isEmpty ? nil : accountInfo.description,
             supply: Double(supply),
-            decimalPlaces: metaData.decimalPlaces
+            decimalPlaces: metaData.decimalPlaces,
+            icon: .create(from: metaData.logoURI)
         )
     }
     
@@ -399,6 +401,120 @@ public final class KeetaClient {
             }
             return .readyToPublish(blocksToPublish, temporaryVotes: recoveredTemporaryVotes)
         }
+    }
+    
+    // MARK: Permissions
+    
+    @discardableResult
+    public func grantPermissions(
+        _ flags: [Permission.BaseFlag],
+        to principal: Account,
+        feeAccount: Account? = nil
+    ) async throws -> PublishResult {
+        guard let account else { throw KeetaClientError.missingAccount }
+        return try await grantPermissions(flags, account: account, to: principal, feeAccount: feeAccount)
+    }
+    
+    @discardableResult
+    public func grantPermissions(
+        _ flags: [Permission.BaseFlag],
+        to principalPubKey: String,
+        feeAccount: Account? = nil
+    ) async throws -> PublishResult {
+        guard let account else { throw KeetaClientError.missingAccount }
+        let principal = try AccountBuilder.create(fromPublicKey: principalPubKey)
+        return try await grantPermissions(flags, account: account, to: principal, feeAccount: feeAccount)
+    }
+    
+    @discardableResult
+    public func grantPermissions(
+        _ flags: [Permission.BaseFlag],
+        account: Account,
+        to principalPubKey: String,
+        feeAccount: Account? = nil
+    ) async throws -> PublishResult {
+        let principal = try AccountBuilder.create(fromPublicKey: principalPubKey)
+        return try await grantPermissions(flags, account: account, to: principal, feeAccount: feeAccount)
+    }
+    
+    @discardableResult
+    public func grantPermissions(
+        _ flags: [Permission.BaseFlag],
+        account: Account,
+        to principal: Account,
+        feeAccount: Account? = nil
+    ) async throws -> PublishResult {
+        let modifyPermission = ModifyPermissionsOperation(
+            principal: principal,
+            method: .set,
+            permission: Permission(baseFlags: flags.contains(.ACCESS) ? flags : [.ACCESS] + flags)
+        )
+        
+        let accountHeadblock = try await api.balance(for: account).currentHeadBlock
+
+        let modifyBlock = try BlockBuilder()
+            .start(from: accountHeadblock, network: config.network.id)
+            .add(account: account)
+            .add(operation: modifyPermission)
+            .seal()
+        
+        return try await api.publish(blocks: [modifyBlock], feeAccount: feeAccount ?? self.feeAccount ?? account)
+    }
+    
+    @discardableResult
+    public func removePermissions(
+        _ flags: [Permission.BaseFlag],
+        from principal: Account,
+        feeAccount: Account? = nil
+    ) async throws -> PublishResult {
+        guard let account else { throw KeetaClientError.missingAccount }
+        return try await removePermissions(flags, account: account, from: principal, feeAccount: feeAccount)
+    }
+    
+    @discardableResult
+    public func removePermissions(
+        _ flags: [Permission.BaseFlag],
+        from principalPubKey: String,
+        feeAccount: Account? = nil
+    ) async throws -> PublishResult {
+        guard let account else { throw KeetaClientError.missingAccount }
+        let principal = try AccountBuilder.create(fromPublicKey: principalPubKey)
+        return try await removePermissions(flags, account: account, from: principal, feeAccount: feeAccount)
+    }
+    
+    @discardableResult
+    public func removePermissions(
+        _ flags: [Permission.BaseFlag],
+        account: Account,
+        from principalPubKey: String,
+        feeAccount: Account? = nil
+    ) async throws -> PublishResult {
+        let principal = try AccountBuilder.create(fromPublicKey: principalPubKey)
+        return try await removePermissions(flags, account: account, from: principal, feeAccount: feeAccount)
+    }
+    
+    @discardableResult
+    public func removePermissions(
+        _ flags: [Permission.BaseFlag],
+        account: Account,
+        from principal: Account,
+        feeAccount: Account? = nil
+    ) async throws -> PublishResult {
+        let modifyPermission = ModifyPermissionsOperation(
+            principal: principal,
+            method: .subtract,
+            permission: Permission(baseFlags: flags)
+        )
+        
+        let accountHeadblock = try await api.balance(for: account).currentHeadBlock
+
+        let modifyBlock = try BlockBuilder()
+            .start(from: accountHeadblock, network: config.network.id)
+            .add(account: account)
+            .add(operation: modifyPermission)
+            .seal()
+        
+        return try await api.publish(blocks: [modifyBlock], feeAccount: feeAccount ?? self.feeAccount ?? account)
     }
     
     // MARK: Helper

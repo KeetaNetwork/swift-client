@@ -2,6 +2,7 @@ import Foundation
 
 public enum RequestError<T>: Error {
     case invalidURL
+    case invalidJSON
     case noResponse
     case decodingError(error: Error, data: Data)
     case unauthorized

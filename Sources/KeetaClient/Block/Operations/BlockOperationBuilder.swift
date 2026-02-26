@@ -26,11 +26,13 @@ public struct BlockOperationBuilder {
         let operationType: BlockOperation.Type = switch type {
         case .send: SendOperation.self
         case .setRep: SetRepOperation.self
-        case .tokenAdminSupply: TokenAdminSupplyOperation.self
-        case .createIdentifier: CreateIdentifierOperation.self
-        case .tokenAdminModifyBalance: TokenAdminModifyBalanceOperation.self
         case .setInfo: SetInfoOperation.self
+        case .modifyPermissions: ModifyPermissionsOperation.self
+        case .createIdentifier: CreateIdentifierOperation.self
+        case .tokenAdminSupply: TokenAdminSupplyOperation.self
+        case .tokenAdminModifyBalance: TokenAdminModifyBalanceOperation.self
         case .receive: ReceiveOperation.self
+        case .modifyCertificate: ModifyCertificateOperation.self
         }
         
         return try operationType.init(from: sequence)

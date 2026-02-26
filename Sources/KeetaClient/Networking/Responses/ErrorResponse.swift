@@ -22,6 +22,8 @@ public enum ErrorCode: String, Decodable {
     case ledgerInsufficientVotingWeight = "LEDGER_INSUFFICIENT_VOTING_WEIGHT"
     case ledgerIdempotentKeyAlreadyExists = "LEDGER_IDEMPOTENT_KEY_EXISTS"
     case blockOnlyTokenOperation = "BLOCK_ONLY_TOKEN_OP"
+    case blockCertificateSubjectMismatch = "BLOCK_CERTIFICATE_SUBJECT_MISMATCH"
+    case blockIntermediateCertificateOnlyAdd = "BLOCK_INTERMEDIATE_CERTIFICATES_ONLY_ADD"
     case blockNoTokenOperation = "BLOCK_NO_TOKEN_OP"
     case blockFieldInvalid = "BLOCK_GENERAL_FIELD_INVALID"
     case blockInvalidIdentifier = "BLOCK_IDENTIFIER_INVALID"

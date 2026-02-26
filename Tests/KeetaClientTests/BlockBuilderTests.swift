@@ -48,57 +48,83 @@ final class BlockBuilderTests: XCTestCase {
     }
     
     func test_createSealedBlocks() throws {
-        let account1 = try AccountBuilder.create(fromSeed: seed, index: 0)
-        let account2 = try AccountBuilder.create(fromSeed: seed, index: 1)
-        let account3 = try AccountBuilder.create(fromSeed: seed, index: 2)
-        
-        let expectedHashes: [Block.Version: [String]] = [
-            .v1: [
-                // generated using TS node v0.10.6
-                "FA9AF443879D12518A2D5A43E018BA72CB1BB8AED51DCED964A3B69B140C9E57",
-                // generated using TS node v0.8.8
-                "D6FE2854DDB8645E2749949DD71FD73054C30FA2AC2D8917D21220F76F2C444C"
-            ],
-            .v2: [
-                // generated using TS node v0.14.3
-                "A8D628AB191BB9CB156E7B2EB34251060045B207D517E58E8CCD924A96123977",
-                "9B2268604FF9B040BEB9C7AC6AFA414CB8BD23ED57B077CAF42DE46659041D3D"
+        for algorithm in [Account.KeyAlgorithm.ED25519, .ECDSA_SECP256K1, .ECDSA_SECP256R1] {
+            let account1 = try AccountBuilder.create(fromSeed: seed, index: 0, algorithm: algorithm)
+            let account2 = try AccountBuilder.create(fromSeed: seed, index: 1, algorithm: algorithm)
+            let account3 = try AccountBuilder.create(fromSeed: seed, index: 2, algorithm: algorithm)
+            
+            let expectedHashes: [Block.Version: [Account.KeyAlgorithm: [String]]] = [
+                .v1: [
+                    .ED25519: [
+                        // generated using TS node v0.14.12
+                        "8ED08D4D17193B467FDDC96B19CBB6039B23E5693667E4C9C5DBA5F9A51B1EC7"
+                    ],
+                    .ECDSA_SECP256K1: [
+                        // generated using TS node v0.10.6
+                        "FA9AF443879D12518A2D5A43E018BA72CB1BB8AED51DCED964A3B69B140C9E57",
+                        // generated using TS node v0.8.8
+                        "D6FE2854DDB8645E2749949DD71FD73054C30FA2AC2D8917D21220F76F2C444C"
+                    ],
+                    .ECDSA_SECP256R1: [
+                        // generated using TS node v0.14.12
+                        "8527EBDB8D57E826BF7BC6DE24B2AB15912A75ACF01DD4DE8CB5758AE4460587"
+                    ]
+                ],
+                .v2: [
+                    .ED25519: [
+                        // generated using TS node v0.14.12
+                        "984DF649733A2C9A7528C5D4862497C90D1E7E9D2FEF5F1E5633E5E1A9B76771"
+                    ],
+                    .ECDSA_SECP256K1: [
+                        // generated using TS node v0.14.3
+                        "A8D628AB191BB9CB156E7B2EB34251060045B207D517E58E8CCD924A96123977",
+                        "9B2268604FF9B040BEB9C7AC6AFA414CB8BD23ED57B077CAF42DE46659041D3D"
+                    ],
+                    .ECDSA_SECP256R1: [
+                        // generated using TS node v0.14.12
+                        "E4B1E16D5522C0B3C083F4CA08770620DCE57B5B37AB1F49988EBF913EEF68AB"
+                    ]
+                ]
             ]
-        ]
-        
-        for version in Block.Version.all {
-            if version == .v1 { continue }
-            let created1 = try XCTUnwrap(Block.dateFormatter.date(from: "2022-06-27T20:23:35.076Z"))
-            let finalBlock = try BlockBuilder(version: version)
-                .start(from: nil, network: 0)
-                .add(signer: account1)
-                .add(operation: SendOperation(amount: 10, to: account2, token: baseToken))
-                .add(operation: SendOperation(amount: 20, to: account3, token: baseToken))
-                .add(operation: SetRepOperation(to: account3))
-                .seal(created: created1)
             
-            let expectedHashes = try XCTUnwrap(expectedHashes[version], "Missing block hashes for version: \(version)")
-            XCTAssertEqual(finalBlock.hash, expectedHashes[0])
-            XCTAssertTrue(finalBlock.opening)
-            
-            let publicAccount1 = try AccountBuilder.create(fromPublicKey: account1.publicKeyString)
-            let hashBytes = try finalBlock.hash.toBytes()
-            switch finalBlock.signature {
-            case .single(let signature):
-                let verified = try publicAccount1.verify(data: Data(hashBytes), signature: signature)
-                XCTAssertTrue(verified)
-            case .multi:
-                XCTFail("Multi-signatures not implemented")
+            for version in Block.Version.all {
+                let created1 = try XCTUnwrap(Block.dateFormatter.date(from: "2022-06-27T20:23:35.076Z"))
+                let finalBlock = try BlockBuilder(version: version)
+                    .start(from: nil, network: 0)
+                    .add(signer: account1)
+                    .add(operation: SendOperation(amount: 10, to: account2, token: baseToken))
+                    .add(operation: SendOperation(amount: 20, to: account3, token: baseToken))
+                    .add(operation: SetRepOperation(to: account3))
+                    .seal(created: created1)
+                
+                let expectedHashes = try XCTUnwrap(
+                    expectedHashes[version]?[algorithm],
+                    "Missing block hashes for version: \(version) & algorithm: \(algorithm)"
+                )
+                XCTAssertEqual(finalBlock.hash, expectedHashes[0])
+                XCTAssertTrue(finalBlock.opening)
+                
+                let publicAccount1 = try AccountBuilder.create(fromPublicKey: account1.publicKeyString)
+                let hashBytes = try finalBlock.hash.toBytes()
+                switch finalBlock.signature {
+                case .single(let signature):
+                    let verified = try publicAccount1.verify(data: Data(hashBytes), signature: signature)
+                    XCTAssertTrue(verified)
+                case .multi:
+                    XCTFail("Multi-signatures not implemented")
+                }
+                
+                let created2 = try XCTUnwrap(Block.dateFormatter.date(from: "2022-06-28T20:24:39.076Z"))
+                let subsequentBlock = try BlockBuilder(version: version)
+                    .start(from: finalBlock.hash, network: 0)
+                    .add(signer: account1)
+                    .add(operation: SendOperation(amount: 10, to: account2, token: baseToken, external: "test"))
+                    .seal(created: created2)
+                if expectedHashes.count == 2 {
+                    XCTAssertEqual(subsequentBlock.hash, expectedHashes[1])
+                }
+                XCTAssertFalse(subsequentBlock.opening)
             }
-            
-            let created2 = try XCTUnwrap(Block.dateFormatter.date(from: "2022-06-28T20:24:39.076Z"))
-            let subsequentBlock = try BlockBuilder(version: version)
-                .start(from: finalBlock.hash, network: 0)
-                .add(signer: account1)
-                .add(operation: SendOperation(amount: 10, to: account2, token: baseToken, external: "test"))
-                .seal(created: created2)
-            XCTAssertEqual(subsequentBlock.hash, expectedHashes[1])
-            XCTAssertFalse(subsequentBlock.opening)
         }
     }
     
@@ -304,7 +330,7 @@ final class BlockBuilderTests: XCTestCase {
         XCTAssertEqual(block.hash, expectedHash)
     }
     
-    func test_feeBlockV2NoFractionalSeconds() throws {
+    func test_troubleMaker() throws {
         let block = try Block.create(from: "oYIB+jCCAfYCAlOCGA8yMDI1MTExOTIxNDc1OVoCAQEEIgACXxjEfJOex0vDaKq8+uKMolgeizl1ElpU0wS1eC5S9CsFAAQgIbrNaJ2MJQPU+Aynlhcevmvf26HBt4Mdnp842H0VSWgwggFQoFIwUAQiAANcYYE1XWhn6RPZzsoJLGkaZ0M9Y9QztMO1RqBNnQezjgIHCt8NxQNAAAQhA2A0LeDIyKHTgBW90qfyYuYn69YMULGqE5ZhWpIrS+zyoFIwUAQiAAKuImOBuXLw89BPO45nMrr4idlPk71e5NCS1bCrXiNjfwIHCt8NxQNAAAQhA2A0LeDIyKHTgBW90qfyYuYn69YMULGqE5ZhWpIrS+zyoFIwUAQiAAL3Wlfc/GoNk2n88oPEDW6rnwCuHzCubofIbeDCBKNOSwIHCt8NxQNAAAQhA2A0LeDIyKHTgBW90qfyYuYn69YMULGqE5ZhWpIrS+zyoFIwUAQiAAMr9ggNx/UztTqAGOwVmsmBvCYo5QdlFkSV3Dl1QwTJ6wIHCt8NxQNAAAQhA2A0LeDIyKHTgBW90qfyYuYn69YMULGqE5ZhWpIrS+zyBEA0kDYbrzXJGNKSmR2wXsJ80hWKl0fQ2J8hlhBqHtsAuAdlkAOt7ieltFbVaf6vzV29cjOSXr4e83ofIoFsiBX2")
         
         let expectedHash = "CD0484ECA3E24ACC147584F9C9DA14124CF4FDAA0A8F78578DEB02B04B66988E"

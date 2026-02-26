@@ -112,6 +112,7 @@ final class KeetaClientTests: XCTestCase {
         let client = KeetaClient(network: .test)
         let feeTransactions = try await client.transactions(for: feeAccount)
         let expectedFeesPaidTransferCount = 8 // 2 blocks published with 4 reps used to reach quorum
+        XCTAssertEqual(feeTransactions.count, 1 + expectedFeesPaidTransferCount) // 1 incoming fund transaction
         XCTAssertEqual(feeTransactions.count(where: { $0.send?.amount == 110_100 }), expectedFeesPaidTransferCount)
         XCTAssertEqual(feeTransactions.count(where: { $0.send?.isNetworkFee == true }), expectedFeesPaidTransferCount)
         XCTAssertEqual(feeTransactions.count(where: { $0.send?.from.publicKeyString == feeAccount.publicKeyString }), expectedFeesPaidTransferCount)
@@ -176,6 +177,43 @@ final class KeetaClientTests: XCTestCase {
         XCTAssertEqual(info.description?.isEmpty, false)
         XCTAssertTrue(info.supply > 1_000_000_000)
         XCTAssertEqual(info.decimalPlaces, 9)
+    }
+    
+    func test_tokenIcon() async throws {
+        let account = try AccountBuilder.new()
+
+        try await fund(account: account, amount: 2_000_000)
+        
+        let client = KeetaClient(network: .test, account: account)
+        
+        let localImageUrl = Bundle.module.url(forResource: "cheeta", withExtension: "png")!
+        let localImage = KeetaImage(data: try .init(contentsOf: localImageUrl))!
+        let remoteUrl = URL(string: "https://keeta.com/assets/logo-cheeta-black.png")!
+        let dataUrl = URL(string: "data:image/jpeg;base64,/9j/4QAiRXhpZgAATU0AKgAAAAgAAQESAAMAAAABAAEAAAAAAAD/2wCEAAEBAQEBAQEBAQEBAQECAgMCAgICAgQDAwIDBQQFBQUEBAQFBgcGBQUHBgQEBgkGBwgICAgIBQYJCgkICgcICAgBAQEBAgICBAICBAgFBAUICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICP/CABEIAEAAQAMBIgACEQEDEQH/xAAyAAEAAgIDAQAAAAAAAAAAAAAACAkGCgIEBwUBAQEBAQEAAAAAAAAAAAAAAAABAgME/9oADAMBAAIQAxAAAADVXD0AAAZzdpCaCbN5X0IMV7kt7uKusYSD2FbP2sC048s3XbfrthVNlz7sH60uu37n4YKAAAB//8QANRAAAQMDAwMCAwUIAwAAAAAAAQIDBAUGBwgREgAJMRMhFEFRChAyQGEVFhciIyQzYkNxcv/aAAgBAQABPwD8hYWMMlZUuWBZuMce3zkS7JTgaj02iUl+bIdUTsAENJUR/wBnYD5kdWj2NqjiGzqRlXuf6t8KdvOxpjfrQ6BOkN1u7qkjyA1T2HOCT8ilBfWk/iQD7dKx19m2oi/3dmaje5le80f01XDT7aiR4XLfYuJjuQUucfntwJ26ndlzEeqC3qrePac104y1fTobBlS8dXWlFtXhFb232Q26G0O7eOTjUdBPsHD1Ve3Vr7ot8fw3qOivVE1e5eEdEFFkz3UurJ2BTJbbVHKCf+QOFG3vvt79ZJ+z3Wg9jy/8L6bdRNUzP3N8cUGgXLkXG76IsKkPxqmlSkx6XJdS3xdaShSgt15YcHDmGS+3tkfG9/4gvm58ZZTs248e5CospUKq0arxVRpcB4AHi42r3G4UlQUN0qSpKkkpIJ6pvda1025RHqHZGYo+O2nEem5KoNFixpih+j6krUk/qnY/Qjq873vTI901S+Mh3ddF+XrNVymVetVB6dNlH/d95SlkfQb7D5AdaF9I0DVZjLW/Up8EUdGNMaSr+TcTiyhiE4yHVIjOk/y7u+gvinyQlzztuKFXq3bdYpFz23WKzbVyQnEyINQgSnIsuA6PcKZfbKVtqH1SQeqL3k+61Ht6Hjyj64M+TY0jaLFRziy6m8T7BDUpUdcta/kNllf69TdJ/dhqlUqOqWoaf9fcu5XXBWZV9uUWuCqOLQAoSlStvilcQhJC9iEhI8AAdd1ex7uzl2vtI2urWpj9WA+4IirMWH6U/wBGLUcuW0ltS2qrKpwIdjvtJPrHmlJRydBCUSGEp+5YWW3A1/l4nh/629vP67dZuxLcGojtVWJjTsU2JjK6NNtYjwV51t6jTwckz66hLf8AbVZEhY9RrkgKcQFhawlPopMYkG2Oy1jrTPQadk7u66v8eaQKA62mVGx3bMtqvXxW0eeCGWQ62wVe45NtyQD+JSPPUzvA6YdG8SdaXaP0N2JiKrhsxl5bycyK7d88ePVaaUtYj7+54qeUj392E+Oh3me6eL7byKdc+dzXUv8AriKZkf8AZZO+/E0z0fhCj/UtdaiNS+edWWSqjl7UXlG6MsZCkthj46puJCYjAO4jxWG0pZjMAkkNNISnckkEkk/djy5rftC6IlduayaTkGlNNrBpk5ZSy64QOKlEb+CPBBB38dUzuzaw8fUqNbuna6LY0uW6yU8WrHo8eNIdCTuEuSHELKk/UBKQfffcE9Re8vhDVlQodm923RDj3U5U2IfwcPKFjIbt28oKQDw5qbU2h1IJ/C26y2NyfRV4MtyM7KlOw4q4UNTq1Msqd9VTLZUSlBXsOZSnYFWw3232G+35T//EABQRAQAAAAAAAAAAAAAAAAAAAED/2gAIAQIBAT8AB//EABoRAAICAwAAAAAAAAAAAAAAAAABESACECH/2gAIAQMBAT8Ap0SHInOoYsbf/9k=")!
+        
+        let icons: [TokenIcon] = [
+            .raw(try Data(contentsOf: localImageUrl)),
+            .remote(remoteUrl),
+            .data(dataUrl)
+        ]
+        
+        for icon in icons {
+            let token = try await client.createToken(name: "ICO", supply: BigInt(1), icon: icon)
+            let info = try await client.tokenInfo(for: token)
+            
+            switch info.icon {
+            case .remote(let url):
+                XCTAssertEqual(url, remoteUrl, "Token icon url mismatch \(token.publicKeyString)")
+            case .data(let url):
+                XCTAssertEqual(url, dataUrl, "Token icon url mismatch \(token.publicKeyString)")
+            case .raw(let data):
+                let image = try XCTUnwrap(KeetaImage(data: data))
+                // Verify the resolution is identical, can't easily compare the image itself reliably otherwise
+                XCTAssertEqual(image.size, localImage.size, "Token icon size mismatch \(token.publicKeyString)")
+            case nil:
+                XCTFail("Missing icon for token \(token.publicKeyString)")
+            }
+        }
     }
     
     func test_createToken() async throws {
@@ -264,6 +302,75 @@ final class KeetaClientTests: XCTestCase {
         
         // Verify published block can be fetched from the network
         _ = try await client.api.block(for: sendBlock1.hash)
+    }
+    
+    func test_basicPermissionFlow() async throws {
+        let owner = try AccountBuilder.new()
+        let principal = try AccountBuilder.new()
+        
+        let client = KeetaClient(network: .test, account: owner)
+        
+        // Fund account to cover network fees
+        try await fund(account: owner, amount: 10_000_000)
+        
+        // Grant permission
+        try await client.grantPermissions([.SEND_ON_BEHALF], to: principal)
+        
+        let expectedPermission = Permission(baseFlags: [.ACCESS, .SEND_ON_BEHALF])
+        
+        // Verify owner & principal
+        let ownerPermissionsGranted = try await client.api.grantedPermissions(of: owner)
+        let principalPermissionsGranted = try await client.api.permissionsReceived(for: principal)
+        
+        XCTAssertEqual(ownerPermissionsGranted.count, 1)
+        XCTAssertEqual(ownerPermissionsGranted.first?.permission, expectedPermission)
+        XCTAssertEqual(principalPermissionsGranted.count, 1)
+        XCTAssertEqual(principalPermissionsGranted.first?.permission, expectedPermission)
+        
+        // Revoke permission
+        try await client.removePermissions([.ACCESS, .SEND_ON_BEHALF], from: principal)
+        
+        // Verify owner & principal
+        let ownerPermissionsRevoked = try await client.api.grantedPermissions(of: owner)
+        let principalPermissionsRevoked = try await client.api.permissionsReceived(for: principal)
+        
+        XCTAssertEqual(ownerPermissionsRevoked, [])
+        XCTAssertEqual(principalPermissionsRevoked, [])
+    }
+    
+    func test_permissions() async throws {
+        let account = try AccountBuilder.new()
+        
+        let client = KeetaClient(network: .test, account: account)
+        
+        // Fund account to cover network fees
+        try await fund(account: account, amount: 10_000_000)
+        
+        let account1 = try AccountBuilder.new()
+        let account2 = try AccountBuilder.new()
+        let account3 = try AccountBuilder.new()
+        
+        try await client.grantPermissions([.SEND_ON_BEHALF], to: account1)
+        try await client.grantPermissions([.MANAGE_CERTIFICATE], to: account2)
+        try await client.grantPermissions([.UPDATE_INFO, .PERMISSION_DELEGATE_ADD], to: account3)
+        
+        let permissions = try await client.api.grantedPermissions(of: account)
+        
+        XCTAssertEqual(permissions.count, 3)
+        
+        let accounts: [String: Set<Permission.BaseFlag>] = [
+            account1.publicKeyString: [.ACCESS, .SEND_ON_BEHALF],
+            account2.publicKeyString: [.ACCESS, .MANAGE_CERTIFICATE],
+            account3.publicKeyString: [.ACCESS, .UPDATE_INFO, .PERMISSION_DELEGATE_ADD]
+        ]
+        for permission in permissions {
+            guard let matched = accounts[permission.principal.publicKeyString] else {
+                XCTFail("Unknown principal: \(permission.principal.publicKeyString)")
+                continue
+            }
+            XCTAssertEqual(permission.target?.publicKeyString, account.publicKeyString)
+            XCTAssertEqual(permission.permission, .init(baseFlags: matched, external: 0))
+        }
     }
     
     func test_demo() async throws {

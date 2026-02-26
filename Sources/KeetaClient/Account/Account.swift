@@ -1,4 +1,5 @@
 import Foundation
+import PotentASN1
 
 public enum AccountError: Error, Equatable {
     case invalidPublicKeyAlgo(key: String)
@@ -6,11 +7,65 @@ public enum AccountError: Error, Equatable {
     case invalidDataLength
     case invalidIdentifierAccount
     case invalidIdentifierAlgorithm
+    case invalidASN1Sequence
+    case invalidASN1KeyData
+    case invalidASN1KeyInfo
+    case invalidASN1KeyInfoOID(String)
+    case unsupportedKeyType(OID)
+    case unsupportedKeyCurveType(OID)
+    case invalidASN1ECDSAKeyData
+    case unknownASN1ECDSAOID(String)
 }
 
 public struct Account: Codable, Hashable {
     
     public typealias PublicKeyAndType = [UInt8]
+    
+    public static func create(from asn1: [ASN1]) throws -> Account {
+        guard asn1.count == 2 else {
+            throw AccountError.invalidASN1Sequence
+        }
+        
+        let keyInfoData = asn1[0]
+        guard let keyInfoRaw = keyInfoData.sequenceValue?[0].objectIdentifierValue else {
+            throw AccountError.invalidASN1KeyInfo
+        }
+        guard let keyInfo = OID(rawValue: keyInfoRaw.description) else {
+            throw AccountError.invalidASN1KeyInfoOID(keyInfoRaw.description)
+        }
+        
+        guard let publicKey = asn1[1].bitStringValue else {
+            throw AccountError.invalidASN1KeyData
+        }
+        
+        switch keyInfo {
+        case .ecdsa:
+            guard let keyCurveRaw = keyInfoData.sequenceValue?[1].objectIdentifierValue else {
+                throw AccountError.invalidASN1ECDSAKeyData
+            }
+            guard let keyCurve = OID(rawValue: keyCurveRaw.description)  else {
+                throw AccountError.unknownASN1ECDSAOID(keyCurveRaw.description)
+            }
+            
+            switch keyCurve {
+            case .secp256k1:
+                let keypair = try EcDSA_P256K.create(from: publicKey.bytes.byteArray)
+                return try Account(keyPair: keypair, keyAlgorithm: .ECDSA_SECP256K1)
+            case .secp256r1:
+                let keypair = try EcDSA_P256R.create(from: publicKey.bytes.byteArray)
+                return try Account(keyPair: keypair, keyAlgorithm: .ECDSA_SECP256R1)
+            default:
+                throw AccountError.unsupportedKeyCurveType(keyInfo)
+            }
+            
+        case .ed25519:
+            let keypair = try Ed25519.create(from: publicKey.bytes.byteArray)
+            return try Account(keyPair: keypair, keyAlgorithm: .ED25519)
+            
+        default:
+            throw AccountError.unsupportedKeyType(keyInfo)
+        }
+    }
     
     public init(keyPair: KeyPair, keyAlgorithm: KeyAlgorithm) throws {
         self.keyPair = keyPair
@@ -115,12 +170,14 @@ extension Account {
         case NETWORK
         case TOKEN
         case STORAGE
+        case ECDSA_SECP256R1 = 6
         case MULTISIG = 7
         
         var utils: (KeyCreateable & Signable & Verifiable).Type {
             get throws {
                 switch self {
-                case .ECDSA_SECP256K1: EcDSA.self
+                case .ECDSA_SECP256K1: EcDSA_P256K.self
+                case .ECDSA_SECP256R1: EcDSA_P256R.self
                 case .ED25519: Ed25519.self
                 case .NETWORK, .TOKEN, .STORAGE: IdentifierKeyPair.self
                 case .MULTISIG: MultiSignatureKeyPair.self

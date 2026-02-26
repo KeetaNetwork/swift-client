@@ -80,7 +80,7 @@ public struct CreateIdentifierOperation: BlockOperation {
         let identifier = try Account(data: identifierData)
         
         switch identifier.keyAlgorithm {
-        case .ECDSA_SECP256K1, .ED25519:
+        case .ECDSA_SECP256K1, .ECDSA_SECP256R1, .ED25519:
             throw CreateIdentifierOperationError.invalidIdentifierKeyAlgorithm
         case .NETWORK, .TOKEN, .STORAGE, .MULTISIG:
             break // valid

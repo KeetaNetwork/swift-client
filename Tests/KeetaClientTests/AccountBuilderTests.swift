@@ -16,6 +16,11 @@ final class AccountBuilderTests: XCTestCase {
             encodedPublicKey: "keeta_aaba6iiv7igjuediblxmwzflfycwjlwrv6bbu4v7tb5kx6d2dllieunedvq3cza"
         ),
         .init(
+            keyAlgorithm: .ECDSA_SECP256R1,
+            publicKey: "03A79FEB218FF321F9EC29DC42E52074E658432F2F595EE770E74B8EE7E23EE4EE",
+            encodedPublicKey: "keeta_ayb2ph7legh7gipz5qu5yqxfeb2omwcdf4xvsxxhodtuxdxh4i7oj3uyxwmldii"
+        ),
+        .init(
             keyAlgorithm: .ED25519,
             publicKey: "0F2115FA0C9A10680AEECB64AB2E0564AED1AF821A72BF987AABF87A1AD68251",
             encodedPublicKey: "keeta_aehscfp2bsnba2ak53fwjkzoavsk5unpqinhfp4ypkv7q6q222bfcko6njrbw"
@@ -52,11 +57,27 @@ final class AccountBuilderTests: XCTestCase {
         ),
         .init(
             seed: "2401D206735C20485347B9A622D94DE9B21F2F1450A77C42102237FA4077567D",
+            index: 0,
+            publicKey: "02B701EBBE7E561CF5DB1C4C47E55C4B55CEF3F89DE8CCEC31284AA5C60B91094B",
+            privateKey: "EEE6ABBC24F7FBB5A7035ABF27D6C389E94E4FF06D1A8948FDA56B4DC2D05794",
+            publicKeyString: "keeta_aybloaplxz7fmhhv3moeyr7flrfvltxt7co6rthmgeuevjogboiqss6pzmhgr6i",
+            algorithm: .ECDSA_SECP256R1
+        ),
+        .init(
+            seed: "2401D206735C20485347B9A622D94DE9B21F2F1450A77C42102237FA4077567D",
             index: 1,
             publicKey: "0246B9851DF9019A4F2B16B0367ADBE1D0C09E37F84163A6173479E44BE94DDC8E",
             privateKey: "6FF01C1B8092A715DF4231AD531CA1101FA941E49BD76EADE0DA047D5333E20E",
             publicKeyString: "keeta_aabenomfdx4qdgspfmllant23pq5bqe6g74ecy5gc42htzcl5fg5zdr55yndzra",
             algorithm: .ECDSA_SECP256K1
+        ),
+        .init(
+            seed: "2401D206735C20485347B9A622D94DE9B21F2F1450A77C42102237FA4077567D",
+            index: 1,
+            publicKey: "0322C10ABB6C436B5467401D6B73518FCE6DB5AB6291040069006DC7113B16A3BC",
+            privateKey: "6FF01C1B8092A715DF4231AD531CA1101FA941E49BD76EADE0DA047D5333E20E",
+            publicKeyString: "keeta_aybsfqikxnweg22um5ab223tkgh443nvvnrjcbaaneag3ryrhmlkhpd7awgj7ry",
+            algorithm: .ECDSA_SECP256R1
         ),
         .init(
             seed: "2401D206735C20485347B9A622D94DE9B21F2F1450A77C42102237FA4077567D",
@@ -91,14 +112,24 @@ final class AccountBuilderTests: XCTestCase {
     ]
     
     func test_createAccountsFromSeed() throws {
+        let data = try XCTUnwrap("Some random test data".data(using: .utf8))
+        
         for config in accountConfigs {
-            let account = try AccountBuilder.create(fromSeed: config.seed, index: config.index, algorithm: config.algorithm)
-            
-            let expected = KeyPair(publicKey: config.publicKey, privateKey: config.privateKey)
-            
-            XCTAssertEqual(account.keyPair, expected)
-            XCTAssertEqual(account.keyAlgorithm, config.algorithm)
-            XCTAssertEqual(account.publicKeyString, config.publicKeyString)
+            do {
+                let account = try AccountBuilder.create(fromSeed: config.seed, index: config.index, algorithm: config.algorithm)
+                
+                let expected = KeyPair(publicKey: config.publicKey, privateKey: config.privateKey)
+                
+                XCTAssertEqual(account.keyPair, expected)
+                XCTAssertEqual(account.keyAlgorithm, config.algorithm)
+                XCTAssertEqual(account.publicKeyString, config.publicKeyString)
+                
+                let signature = try account.sign(data: data)
+                let valid = try account.verify(data: data, signature: signature)
+                XCTAssertTrue(valid, "Signed data couldn't be verified for \(config)")
+            } catch {
+                XCTFail("Failed for \(config)\n\(error)")
+            }
         }
     }
     

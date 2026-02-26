@@ -3,7 +3,10 @@ import ed25519swift
 
 struct Ed25519: KeyCreateable, Signable, Verifiable {
     static func create(from seed: String) throws -> KeyPair {
-        let bytes = try seed.toBytes()
+        try create(from: try seed.toBytes())
+    }
+    
+    static func create(from bytes: [UInt8]) throws -> KeyPair {
         let hash: String = Hash.create(from: bytes)
         return try keypair(from: hash)
     }

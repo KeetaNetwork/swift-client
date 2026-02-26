@@ -8,7 +8,6 @@ public enum SetInfoOperationError: Error {
     case invalidDescription
     case invalidMetaData
     case invalidPermissionSequenceLength
-    case invalidPermissionFlags
     case unknownPermissionFlag(BigInt)
 }
 
@@ -61,18 +60,10 @@ public struct SetInfoOperation: BlockOperation {
             throw SetInfoOperationError.invalidName
         }
         
-        var defaultPermission: Permission?
-        if let permissionSequence = sequence[safe: 3]?.sequenceValue {
-            guard permissionSequence.count == 2 else {
-                throw SetInfoOperationError.invalidPermissionSequenceLength
-            }
-            guard let baseFlagRaw = permissionSequence[0].integerValue else {
-                throw SetInfoOperationError.invalidPermissionFlags
-            }
-            guard let baseFlag = Permission.BaseFlag(rawValue: baseFlagRaw) else {
-                throw SetInfoOperationError.unknownPermissionFlag(baseFlagRaw)
-            }
-            defaultPermission = Permission(baseFlag: baseFlag)
+        let defaultPermission: Permission? = if let permissionSequence = sequence[safe: 3]?.sequenceValue {
+            try Permission.parse(from: permissionSequence)
+        } else {
+            nil
         }
         
         self.init(name: name, description: description, metaData: metaData, defaultPermission: defaultPermission)

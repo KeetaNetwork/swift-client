@@ -5,7 +5,8 @@ import PotentASN1
 public enum VoteError: Error {
     case invalidExtensionSequence
     case invalidExtensionCriticalCheck
-    case invalidExtensionOID
+    case invalidExtensionOIDValue
+    case invalidExtensionOID(String)
     case unknownCriticalExtension(OID)
     case invalidFeeDataExtension
     case invalidHashDataExtension
@@ -18,6 +19,7 @@ public enum VoteError: Error {
     case invalidBlockHash
     case invalidBlocksSequenceLength
     case permanentVoteCanNotHaveFees
+    case invalidSigner
 }
 
 /*
@@ -44,6 +46,7 @@ public enum VoteError: Error {
 
 public struct Vote {
     public let certificate: Certificate
+    public let issuer: Account
     public let blocks: [String] // Hashes
     public let fee: Fee?
     private let data: Data
@@ -51,7 +54,6 @@ public struct Vote {
     // Convenience getter
     public var id: String { certificate.id }
     public var hash: String { certificate.hash }
-    public var issuer: Account { certificate.issuer }
     public var serial: Serial { certificate.serial }
     public var validityFrom: Date { certificate.validityFrom }
     public var validityTo: Date { certificate.validityTo }
@@ -97,8 +99,14 @@ public struct Vote {
             throw VoteError.permanentVoteCanNotHaveFees
         }
         
+        let issuer: Account = switch certificate.issuer {
+            case .account(let account): account
+            case .common: throw VoteError.invalidSigner
+        }
+        
         // Construct vote
         self.certificate = certificate
+        self.issuer = issuer
         self.blocks = blocks
         self.fee = fee
         self.data = data

@@ -24,8 +24,10 @@ public enum BlockOperationType: UInt8, CaseIterable {
     case send = 0
     case setRep = 1
     case setInfo = 2
+    case modifyPermissions = 3
     case createIdentifier = 4
     case tokenAdminSupply = 5
     case tokenAdminModifyBalance = 6
     case receive = 7
+    case modifyCertificate = 8
 }

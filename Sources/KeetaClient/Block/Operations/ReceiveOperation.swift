@@ -71,7 +71,7 @@ public struct ReceiveOperation: BlockOperation {
         }
         
         // Exact must be true when forwarding a receive
-        if forward != nil && !exact {
+        if forward != nil && exact != true {
             throw ReceiveOperationError.invalidExactWhenForwarding
         }
     }

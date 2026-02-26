@@ -12,6 +12,8 @@ public struct NumbersConverter {
     
     /// Convert a decimal (Double) into a BigInt scaled by decimals
     public static func toBigInt(_ value: Double, decimals: Int) -> BigInt {
+        if decimals == 0 { return BigInt(value) }
+        
         if value.truncatingRemainder(dividingBy: 1) == 0 {
             let multiplier = BigInt(10).power(decimals)
             return BigInt(value) * multiplier

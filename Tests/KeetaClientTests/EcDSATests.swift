@@ -29,7 +29,7 @@ final class EcDSATests: XCTestCase {
             204, 206,   1, 246, 165,   7, 116, 255, 114
         ]
         
-        let result = try EcDSA.signatureFromDER(signature)
+        let result = try EcDSA_P256K.signatureFromDER(signature)
         
         XCTAssertEqual(result, expected)
     }

@@ -223,6 +223,31 @@ public final class KeetaApi: HTTPClient {
         }
     }
     
+    public func certificate(for account: Account, hash: String) async throws -> Certificate {
+        let request = KeetaEndpoint.certificate(for: account, hash: hash, baseUrl: preferredRep.apiUrl)
+        let response: CertificateResponse = try await sendRequest(to: request)
+        return try Certificate.create(from: response.certificate, intermediates: response.intermediates)
+    }
+    
+    public func certificates(for account: Account, enforceCompleteness: Bool = false) async throws -> [Certificate] {
+        let request = KeetaEndpoint.certificates(for: account, baseUrl: preferredRep.apiUrl)
+
+        let response: CertificatesResponse = try await sendRequest(to: request)
+        
+        var certificates = [Certificate]()
+        for cert in response.certificates {
+            do {
+                let certificate = try Certificate.create(from: cert.certificate, intermediates: cert.intermediates)
+                certificates.append(certificate)
+            } catch {
+                if enforceCompleteness {
+                    throw error
+                }
+            }
+        }
+        return certificates
+    }
+    
     @discardableResult
     public func publish(blocks: [Block], quotes: [VoteQuote]? = nil, feeAccount: Account) async throws -> PublishResult {
         try await publish(blocks: blocks, quotes: quotes) {
@@ -367,6 +392,33 @@ public final class KeetaApi: HTTPClient {
         }
         
         return .init(name: result.info.name, description: result.info.description, metadata: result.info.metadata, supply: supply)
+    }
+    
+    public func permissionsReceived(for account: Account, filter: [Account] = []) async throws -> [GrantedPermissions] {
+        let request = KeetaEndpoint.permissionsReceived(for: account, filter: filter, baseUrl: preferredRep.apiUrl)
+        let response: GrantedPermissionsResponse = try await sendRequest(to: request)
+        
+        return try response.permissions.map {
+            GrantedPermissions(
+                principal: try AccountBuilder.create(fromPublicKey: $0.principal),
+                target: try $0.target.map { try AccountBuilder.create(fromPublicKey: $0) },
+                permission: try Permission.parse($0.permissions)
+            )
+        }.filter { !$0.permission.isEmpty }
+    }
+    
+    public func grantedPermissions(of account: Account) async throws -> [GrantedPermissions] {
+        let request = KeetaEndpoint.grantedPermissions(for: account, baseUrl: preferredRep.apiUrl)
+        let response: GrantedPermissionsResponse = try await sendRequest(to: request)
+        
+        return try response.permissions.map {
+            GrantedPermissions(
+                principal: try AccountBuilder.create(fromPublicKey: $0.principal),
+                target: try $0.target.map { try AccountBuilder.create(fromPublicKey: $0) },
+                permission: try Permission.parse($0.permissions)
+            )
+        }
+        .filter { !$0.permission.isEmpty }
     }
     
     public func history(of account: Account, limit: Int = 50, startBlocksHash: String? = nil) async throws -> [VoteStaple] {

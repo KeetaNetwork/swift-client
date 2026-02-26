@@ -3,6 +3,13 @@ import PotentASN1
 public enum Match<T> {
     case known(T)
     case unknown(String)
+    
+    var description: String {
+        switch self {
+        case .known(let value): "\(value)"
+        case .unknown(let string): string
+        }
+    }
 }
 
 extension Match: Equatable where T: Hashable {}
@@ -25,7 +32,8 @@ public class ASN1DistinguishedNames {
             guard let content = sub.collectionValue?[0].collectionValue,
                   let tag = content[safe: 0], tag.knownTag == .objectIdentifier,
                   let tagValue = tag.objectIdentifierValue,
-                  let value = content[safe: 1]?.utf8StringValue else {
+                  let rawValue = content[safe: 1],
+                  let value = rawValue.utf8StringValue ?? rawValue.printableStringValue ?? rawValue.ia5StringValue else {
                 continue
             }
             

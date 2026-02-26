@@ -278,7 +278,7 @@ public struct Block {
         }
         
         let opening = previousHash == account.publicKeyString
-        
+                
         let rawBlock = RawBlockData(
             version: .v2,
             purpose: purpose,

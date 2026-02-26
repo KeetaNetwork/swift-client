@@ -31,6 +31,15 @@ extension XCTestCase {
     }
 }
 
+extension Certificate {
+    
+    static let dateFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withFractionalSeconds, .withInternetDateTime]
+        return formatter
+    }()
+}
+
 extension Block {
     
     static let dateFormatter: ISO8601DateFormatter = {

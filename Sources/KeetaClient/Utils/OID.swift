@@ -1,7 +1,12 @@
+// 1.3.6.1.4.1 = Private Enterprise
+
 public enum OID: String {
     case ecdsaWithSHA512 = "1.2.840.10045.4.3.4"
     case ecdsaWithSHA3_256 = "2.16.840.1.101.3.4.3.10"
     case ed25519 = "1.3.6.1.4.1.11591.15.1"
+    case ecdsa = "1.2.840.10045.2.1"
+    case secp256k1 = "1.3.132.0.10"
+    case secp256r1 = "1.2.840.10045.3.1.7"
     
     // X.500 attributes
     case commonName = "2.5.4.3"
@@ -23,4 +28,10 @@ public enum OID: String {
     case userId = "0.9.2342.19200300.100.1.1"
     
     case fees = "1.3.6.1.4.1.62675.0.1.0"
+    case kyc = "1.3.6.1.4.1.62675.0.0"
+    
+    case keyUsage = "2.5.29.15"
+    case basicConstraints = "2.5.29.19"
+    case authorityKeyIdentifier = "2.5.29.35"
+    case subjectKeyIdentifier = "2.5.29.14"
 }

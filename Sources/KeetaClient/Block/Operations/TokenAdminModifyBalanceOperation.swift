@@ -65,7 +65,7 @@ public struct TokenAdminModifyBalanceOperation: BlockOperation {
         [
             .octetString(Data(token)),
             .integer(amount),
-            .integer(BigInt(method.rawValue))
+            .integer(method.value)
         ]
     }
 }

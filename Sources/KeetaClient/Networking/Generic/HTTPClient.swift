@@ -59,6 +59,9 @@ extension HTTPClient {
         request.allHTTPHeaderFields = endpoint.header
 
         if let body = endpoint.body {
+            guard JSONSerialization.isValidJSONObject(body) else {
+                throw RequestError<Error>.invalidJSON
+            }
             request.httpBody = try JSONSerialization.data(withJSONObject: body, options: [])
         }
         

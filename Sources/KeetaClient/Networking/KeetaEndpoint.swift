@@ -66,6 +66,14 @@ struct KeetaEndpoint: Endpoint {
         .init(url: baseUrl + "/node/ledger/representatives", method: .get)
     }
     
+    static func certificates(for account: Account, baseUrl: String) -> Self {
+        .init(url: baseUrl + "/node/ledger/account/\(account.publicKeyString)/certificates", method: .get)
+    }
+    
+    static func certificate(for account: Account, hash: String, baseUrl: String) -> Self {
+        .init(url: baseUrl + "/node/ledger/account/\(account.publicKeyString)/certificates/\(hash)", method: .get)
+    }
+    
     static func accountInfo(of account: Account, baseUrl: String) -> Self {
         .init(url: baseUrl + "/node/ledger/account/\(account.publicKeyString)", method: .get)
     }
@@ -78,6 +86,16 @@ struct KeetaEndpoint: Endpoint {
     static func block(for account: Account, idempotent: String, side: LedgerSide, baseUrl: String) -> Self {
         let path = "/node/ledger/account/\(account.publicKeyString)/idempotent/\(idempotent)"
         return .init(url: baseUrl + path, method: .get, query: ["side": side.rawValue])
+    }
+    
+    static func permissionsReceived(for account: Account, filter: [Account] = [], baseUrl: String) -> Self {
+        let path = "/node/ledger/account/\(account.publicKeyString)/acl/\(filter.map(\.publicKeyString).joined(separator: ","))"
+        return .init(url: baseUrl + path, method: .get)
+    }
+    
+    static func grantedPermissions(for account: Account, baseUrl: String) -> Self {
+        let path = "/node/ledger/account/\(account.publicKeyString)/acl/granted"
+        return .init(url: baseUrl + path, method: .get)
     }
     
     static func history(for account: Account, limit: Int, startBlocksHash: String?, baseUrl: String) -> Self {
