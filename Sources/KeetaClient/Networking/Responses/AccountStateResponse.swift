@@ -11,7 +11,7 @@ struct AccountInfoResponse: Decodable {
     let description: String
     let metadata: String
     let supply: String?
-//    let defaultPermission: Permissions?
+    let defaultPermission: [String]?
 }
 
 struct AccountBalanceResponse: Decodable {

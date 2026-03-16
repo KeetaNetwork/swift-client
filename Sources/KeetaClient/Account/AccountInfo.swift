@@ -5,5 +5,5 @@ public struct AccountInfo {
     public let description: String
     public let metadata: String
     public let supply: BigInt?
-//    let defaultPermission: Permissions?
+    public let defaultPermission: Permission?
 }

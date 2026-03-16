@@ -440,25 +440,33 @@ public final class KeetaClient {
     ) async throws -> RecoverResult? {
         guard let pendingBlock = try await api.pendingBlock(for: account) else { return nil }
         
-        let recoveredTemporaryVotes = try await api.recoverVotes(for: pendingBlock.hash)
-        
+        var temporaryVotes = try await api.recoverVotes(for: pendingBlock.hash)
+
+        do {
+            try await api.validateVotingWeightThreshold(votes: temporaryVotes)
+        } catch {
+            let existingIssuers = Set(temporaryVotes.map { $0.issuer.publicKeyString })
+            let additionalVotes = try await api.votes(for: [pendingBlock], type: .temporary(), excluding: existingIssuers)
+            temporaryVotes += additionalVotes
+        }
+
         let feeAccount = feeAccount ?? self.feeAccount ?? account
         
         if publish {
-            let result = try await api.publish(blocks: [pendingBlock], temporaryVotes: recoveredTemporaryVotes) {
+            let result = try await api.publish(blocks: [pendingBlock], temporaryVotes: temporaryVotes) {
                 try await BlockBuilder.feeBlock(for: $0, account: feeAccount, network: self.config)
             }
             return .published(result)
         } else {
             let blocksToPublish: [Block]
-            if recoveredTemporaryVotes.requiresFees {
-                let recoveredStaple = try VoteStaple.create(from: recoveredTemporaryVotes, blocks: [pendingBlock])
+            if temporaryVotes.requiresFees {
+                let recoveredStaple = try VoteStaple.create(from: temporaryVotes, blocks: [pendingBlock])
                 let fee = try await BlockBuilder.feeBlock(for: recoveredStaple, account: feeAccount, network: self.config)
                 blocksToPublish = [pendingBlock, fee]
             } else {
                 blocksToPublish = [pendingBlock]
             }
-            return .readyToPublish(blocksToPublish, temporaryVotes: recoveredTemporaryVotes)
+            return .readyToPublish(blocksToPublish, temporaryVotes: temporaryVotes)
         }
     }
     

@@ -12,6 +12,10 @@ public struct ClientRepresentative {
         self.socketUrl = socketUrl
         self.weight = weight
     }
+    
+    public var hasWeight: Bool {
+        (weight ?? 0) > 0
+    }
 }
 
 extension [ClientRepresentative] {

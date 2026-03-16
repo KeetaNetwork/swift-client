@@ -246,7 +246,8 @@ class ApiTests: XCTestCase {
             XCTAssertNotNil($0.weight, "Expected rep \($0.address) to have weight")
         }
         
-        let preferredRep = try XCTUnwrap(api.preferredRep)
+        let preferred = api.preferredRep
+        let preferredRep = try XCTUnwrap(preferred)
         let otherReps = api.reps.filter { $0.address != preferredRep.address }
         
         let highestWeight = try XCTUnwrap(preferredRep.weight)
@@ -585,6 +586,63 @@ class ApiTests: XCTestCase {
         
         let recipientBalance = try await api.balance(for: recipient)
         XCTAssertEqual(send.amount, recipientBalance.rawBalances[config.baseToken.publicKeyString])
+    }
+    
+    func test_permissions() async throws {
+        let api = try createAPI()
+        
+        let owner = try AccountBuilder.new()
+        let storage = try owner.generateIdentifier(type: .STORAGE)
+        
+        try await api.send(amount: 3_600_000, from: wellFundedAccount, to: owner, config: config)
+        
+        // Publish storage account with info & base permissions
+        let createBlock = try BlockBuilder()
+            .start(from: nil, config: config)
+            .add(account: owner)
+            .add(operation: CreateIdentifierOperation(identifier: storage))
+            .seal()
+        
+        let setupBlock = try BlockBuilder()
+            .start(from: nil, config: config)
+            .add(account: storage)
+            .add(signer: owner)
+            .add(operations:
+                SetInfoOperation(
+                    name: "",
+                    description: "swift-core-test",
+                    defaultPermission: Permission(baseFlags: [.ACCESS, .MANAGE_CERTIFICATE])
+                )
+            )
+            .seal()
+        
+        let publishResult = try await api.publish(blocks: [createBlock, setupBlock], feeAccount: owner)
+        
+        // Verify base permissions got added
+        var info = try await api.accountInfo(for: storage)
+        XCTAssertEqual(info.defaultPermission?.baseFlags, [.ACCESS, .MANAGE_CERTIFICATE])
+        XCTAssertEqual(info.defaultPermission?.external, .zero)
+        
+        // Override default base permissions to remove manage certificate
+        let overrideBlock = try BlockBuilder()
+            .start(from: publishResult.lastBlockHash(for: storage), config: config)
+            .add(account: storage)
+            .add(signer: owner)
+            .add(operations:
+                SetInfoOperation(
+                    name: "",
+                    description: "swift-core-test",
+                    defaultPermission: Permission(baseFlags: [.ACCESS])
+                )
+            )
+            .seal()
+        
+        try await api.publish(blocks: [overrideBlock], feeAccount: owner)
+        
+        // Verify permissions got reduced
+        info = try await api.accountInfo(for: storage)
+        XCTAssertEqual(info.defaultPermission?.baseFlags, [.ACCESS])
+        XCTAssertEqual(info.defaultPermission?.external, .zero)
     }
     
     func test_createToken() async throws {

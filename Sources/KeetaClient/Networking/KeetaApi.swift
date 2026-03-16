@@ -8,6 +8,7 @@ public enum KeetaApiError: Error {
     case noVotes(errors: [Error])
     case missingAtLeastOneRep
     case feesRequiredButFeeBuilderMissing
+    case insufficientVotingWeight(achieved: Double, required: Double)
     case blockAccountMismatch
     case blockHashMismatch
     case noPendingBlock(errors: [Error])
@@ -16,6 +17,7 @@ public enum KeetaApiError: Error {
 
 public final class KeetaApi: HTTPClient {
 
+    public var minVotingWeight: Double = 0.7
     public var preferredRep: ClientRepresentative
     public var reps: [ClientRepresentative]
     public let networkId: NetworkID
@@ -70,9 +72,9 @@ public final class KeetaApi: HTTPClient {
         return try await votes(for: blocks, type: type)
     }
     
-    public func votes(for blocks: [Block], type: VoteType) async throws -> [Vote] {
+    public func votes(for blocks: [Block], type: VoteType, excluding excludedIssuers: Set<String> = []) async throws -> [Vote] {
         let requests: [Endpoint]
-        let repsInfo = Dictionary(uniqueKeysWithValues: reps.map({ ($0.address, $0.apiUrl) }))
+        let repsInfo = Dictionary(uniqueKeysWithValues: reps.filter { !excludedIssuers.contains($0.address) }.map({ ($0.address, $0.apiUrl) }))
         
         switch type {
         case .temporary(let quotes):
@@ -150,7 +152,11 @@ public final class KeetaApi: HTTPClient {
         }
     }
     
-    public func pendingBlock(for account: Account) async throws -> Block? {
+    public func pendingBlock(for account: Account, updateReps: Bool = true) async throws -> Block? {
+        if updateReps {
+            try await updateRepresentatives()
+        }
+        
         let requests = KeetaEndpoint.pendingBlock(for: account, from: .init(reps.map(\.apiUrl)))
         
         var errors = [Error]()
@@ -265,12 +271,28 @@ public final class KeetaApi: HTTPClient {
         return try await publish(blocks: blocks, temporaryVotes: temporaryVotes, feeBlockBuilder: feeBlockBuilder)
     }
     
+    public func validateVotingWeightThreshold(votes: [Vote]) throws {
+        let votingIssuers = Set(votes.map { $0.issuer.publicKeyString })
+        let totalWeight = reps.compactMap(\.weight).reduce(BigInt(0), +)
+        let votingReps = reps.filter { votingIssuers.contains($0.address) }
+        let votingWeight = votingReps.compactMap(\.weight).reduce(BigInt(0), +)
+        
+        let achieved = totalWeight > 0 ? Double(votingWeight) / Double(totalWeight) : 0
+        
+        // if not all reps are known, skip the local validation
+        if votingIssuers.count == votingReps.count && achieved < minVotingWeight {
+            throw KeetaApiError.insufficientVotingWeight(achieved: achieved, required: minVotingWeight)
+        }
+    }
+
     @discardableResult
     public func publish(
         blocks: [Block],
         temporaryVotes: [Vote],
         feeBlockBuilder: ((VoteStaple) async throws -> Block)?
     ) async throws -> PublishResult {
+        try validateVotingWeightThreshold(votes: temporaryVotes)
+
         let blocksToPublish: [Block]
         let fees: [PublishResult.PaidFee]
         let feeBlockHash: String?
@@ -358,13 +380,16 @@ public final class KeetaApi: HTTPClient {
         }
         
         if reps.isEmpty || replace {
-            reps = response.representatives.map { rep(from: $0) }
+            reps = response.representatives.map { rep(from: $0) }.filter { $0.hasWeight }
         } else {
             // only update known reps
             for (index, knownRep) in reps.enumerated() {
                 if let update = response.representatives
                     .first(where: { $0.representative.lowercased() == knownRep.address.lowercased() }) {
-                    reps[index] = rep(from: update)
+                    let rep = rep(from: update)
+                    if rep.hasWeight {
+                        reps[index] = rep
+                    }
                 }
             }
         }
@@ -391,7 +416,15 @@ public final class KeetaApi: HTTPClient {
             supply = nil
         }
         
-        return .init(name: result.info.name, description: result.info.description, metadata: result.info.metadata, supply: supply)
+        let defaultPermission: Permission?
+
+        if let permissionRaw = result.info.defaultPermission {
+            defaultPermission = try Permission.parse(permissionRaw)
+        } else {
+            defaultPermission = nil
+        }
+
+        return .init(name: result.info.name, description: result.info.description, metadata: result.info.metadata, supply: supply, defaultPermission: defaultPermission)
     }
     
     public func permissionsReceived(for account: Account, filter: [Account] = []) async throws -> [GrantedPermissions] {
