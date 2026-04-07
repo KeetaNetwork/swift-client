@@ -11,6 +11,14 @@ public enum NetworkAlias: String {
         }
     }
     
+    public var serviceUrl: String {
+        let env = switch self {
+        case .test: "test"
+        case .main: "network"
+        }
+        return "https://static.\(env).keeta.com/metadata/services"
+    }
+    
     public func keetaRepApiBaseUrl(number: Int = 1) -> String {
         "https://rep\(number).\(self).network.api.keeta.com/api"
     }

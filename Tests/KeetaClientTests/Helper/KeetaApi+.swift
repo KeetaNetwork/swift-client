@@ -6,7 +6,7 @@ extension KeetaApi {
     @discardableResult
     func send(amount: BigInt, from fromAccount: Account, to toAccount: Account, config: NetworkConfig) async throws -> String {
         let previousBlockHash = try await balance(for: fromAccount).currentHeadBlock
-        let send = try SendOperation(amount: amount, to: toAccount, token: config.baseToken)
+        let send = try SendOperation(amount: TokenAmount(raw: amount), to: toAccount, token: config.baseToken)
         
         let sendBlock = try BlockBuilder()
             .start(from: previousBlockHash, network: config.network.id)

@@ -30,18 +30,18 @@ public struct SendOperation: BlockOperation {
     public let token: Account.PublicKeyAndType
     public let external: String?
     
-    public init(amount: BigInt, to accountPubKey: String, tokenPubKey: String, external: String? = nil) throws {
+    public init(amount: TokenAmount, to accountPubKey: String, tokenPubKey: String, external: String? = nil) throws {
         let account = try AccountBuilder.create(fromPublicKey: accountPubKey)
         let token = try AccountBuilder.create(fromPublicKey: tokenPubKey)
         try self.init(amount: amount, to: account, token: token, external: external)
     }
     
-    public init(amount: BigInt, to account: Account, token: Account, external: String? = nil) throws {
-        guard amount > 0 else {
+    public init(amount: TokenAmount, to account: Account, token: Account, external: String? = nil) throws {
+        guard amount.raw > 0 else {
             throw SendOperationError.invalidAmount
         }
         
-        self.amount = amount
+        self.amount = amount.raw
         to = account.publicKeyAndType
         self.token = token.publicKeyAndType
         self.external = external
@@ -66,7 +66,7 @@ public struct SendOperation: BlockOperation {
         
         let external = sequence[safe: 3]?.utf8StringValue?.storage
         
-        try self.init(amount: amount, to: to, token: token, external: external)
+        try self.init(amount: TokenAmount(raw: amount), to: to, token: token, external: external)
     }
     
     public func asn1Values() -> [ASN1] {

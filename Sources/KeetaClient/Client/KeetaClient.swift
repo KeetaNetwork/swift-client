@@ -1,5 +1,4 @@
 import Foundation
-import BigInt
 
 public enum KeetaClientError: Error {
     case missingAccount
@@ -51,53 +50,53 @@ public final class KeetaClient {
     // MARK: Send
     
     @discardableResult
-    public func send(amount: BigInt, to toPubKeyAccount: String, options: Options? = nil) async throws -> PublishResult {
+    public func send(amount: TokenAmount, to toPubKeyAccount: String, options: Options? = nil) async throws -> PublishResult {
         let toAccount = try AccountBuilder.create(fromPublicKey: toPubKeyAccount)
         return try await send(amount: amount, to: toAccount, options: options)
     }
-    
+
     @discardableResult
-    public func send(amount: BigInt, to toAccount: Account, options: Options? = nil) async throws -> PublishResult {
+    public func send(amount: TokenAmount, to toAccount: Account, options: Options? = nil) async throws -> PublishResult {
         guard let account else { throw KeetaClientError.missingAccount }
         return try await send(amount: amount, from: account, to: toAccount, options: options)
     }
-    
+
     @discardableResult
-    public func send(amount: BigInt, to toPubKeyAccount: String, token tokenPubKey: String, options: Options? = nil) async throws -> PublishResult {
+    public func send(amount: TokenAmount, to toPubKeyAccount: String, token tokenPubKey: String, options: Options? = nil) async throws -> PublishResult {
         guard let account else { throw KeetaClientError.missingAccount }
         let token = try AccountBuilder.create(fromPublicKey: tokenPubKey)
         let toAccount = try AccountBuilder.create(fromPublicKey: toPubKeyAccount)
         return try await send(amount: amount, from: account, to: toAccount, token: token, options: options)
     }
-    
+
     @discardableResult
-    public func send(amount: BigInt, to toAccount: Account, token tokenPubKey: String, options: Options? = nil) async throws -> PublishResult {
+    public func send(amount: TokenAmount, to toAccount: Account, token tokenPubKey: String, options: Options? = nil) async throws -> PublishResult {
         guard let account else { throw KeetaClientError.missingAccount }
         let token = try AccountBuilder.create(fromPublicKey: tokenPubKey)
         return try await send(amount: amount, from: account, to: toAccount, token: token, options: options)
     }
-    
+
     @discardableResult
-    public func send(amount: BigInt, to toAccount: Account, token: Account, options: Options? = nil) async throws -> PublishResult {
+    public func send(amount: TokenAmount, to toAccount: Account, token: Account, options: Options? = nil) async throws -> PublishResult {
         guard let account else { throw KeetaClientError.missingAccount }
         return try await send(amount: amount, from: account, to: toAccount, token: token, options: options)
     }
-    
+
     @discardableResult
-    public func send(amount: BigInt, from fromAccount: Account, to toAccount: Account, options: Options? = nil) async throws -> PublishResult {
+    public func send(amount: TokenAmount, from fromAccount: Account, to toAccount: Account, options: Options? = nil) async throws -> PublishResult {
         try await send(amount: amount, from: fromAccount, to: toAccount, token: config.baseToken, options: options)
     }
-    
+
     @discardableResult
-    public func send(amount: BigInt, from fromAccount: Account, to toPubKeyAccount: String, token tokenPubKey: String, options: Options? = nil) async throws -> PublishResult {
+    public func send(amount: TokenAmount, from fromAccount: Account, to toPubKeyAccount: String, token tokenPubKey: String, options: Options? = nil) async throws -> PublishResult {
         let toAccount = try AccountBuilder.create(fromPublicKey: toPubKeyAccount)
         let token = try AccountBuilder.create(fromPublicKey: tokenPubKey)
         return try await send(amount: amount, from: fromAccount, to: toAccount, token: token, options: options)
     }
-    
+
     @discardableResult
     public func send(
-        amount: BigInt,
+        amount: TokenAmount,
         from fromAccount: Account,
         to toAccount: Account,
         token: Account,
@@ -106,7 +105,7 @@ public final class KeetaClient {
         guard token.keyAlgorithm == .TOKEN else {
             throw KeetaClientError.invalidTokenAccount
         }
-        
+
         let balance = try await api.balance(for: fromAccount)
         let send = try SendOperation(amount: amount, to: toAccount, token: token, external: options?.memo)
         
@@ -273,13 +272,7 @@ public final class KeetaClient {
     // MARK: Token Management
     
     public func createToken(
-        name: String, supply: Int, decimals: Int = 9, description: String = "", icon: TokenIcon? = nil, feeAccount: Account? = nil
-    ) async throws -> Account {
-        try await createToken(name: name, supply: BigInt(supply), decimals: decimals, description: description, icon: icon, feeAccount: feeAccount)
-    }
-    
-    public func createToken(
-        name: String, supply: BigInt, decimals: Int = 9, description: String = "", icon: TokenIcon? = nil, feeAccount: Account? = nil
+        name: String, supply: TokenAmount, decimals: Int = 9, description: String = "", icon: TokenIcon? = nil, feeAccount: Account? = nil
     ) async throws -> Account {
         guard let account else { throw KeetaClientError.missingAccount }
         return try await createToken(
@@ -290,7 +283,7 @@ public final class KeetaClient {
     public func createToken(
         for account: Account,
         name: String,
-        supply: BigInt,
+        supply: TokenAmount,
         decimals: Int = 9,
         description: String = "",
         icon: TokenIcon? = nil,
@@ -431,10 +424,11 @@ public final class KeetaClient {
         _ flags: [Permission.BaseFlag],
         account: Account,
         to principalPubKey: String,
+        signer: Account? = nil,
         feeAccount: Account? = nil
     ) async throws -> PublishResult {
         let principal = try AccountBuilder.create(fromPublicKey: principalPubKey)
-        return try await grantPermissions(flags, account: account, to: principal, feeAccount: feeAccount)
+        return try await grantPermissions(flags, account: account, to: principal, signer: signer, feeAccount: feeAccount)
     }
     
     @discardableResult
@@ -442,12 +436,13 @@ public final class KeetaClient {
         _ flags: [Permission.BaseFlag],
         account: Account,
         to principal: Account,
+        signer: Account? = nil,
         feeAccount: Account? = nil
     ) async throws -> PublishResult {
         let modifyPermission = ModifyPermissionsOperation(
             principal: principal,
             method: .set,
-            permission: Permission(baseFlags: flags.contains(.ACCESS) ? flags : [.ACCESS] + flags)
+            permission: Permission(baseFlags: flags).withAccess()
         )
         
         let accountHeadblock = try await api.balance(for: account).currentHeadBlock
@@ -455,6 +450,7 @@ public final class KeetaClient {
         let modifyBlock = try BlockBuilder()
             .start(from: accountHeadblock, network: config.network.id)
             .add(account: account)
+            .add(signer: signer)
             .add(operation: modifyPermission)
             .seal()
         
@@ -465,21 +461,23 @@ public final class KeetaClient {
     public func removePermissions(
         _ flags: [Permission.BaseFlag],
         from principal: Account,
+        signer: Account? = nil,
         feeAccount: Account? = nil
     ) async throws -> PublishResult {
         guard let account else { throw KeetaClientError.missingAccount }
-        return try await removePermissions(flags, account: account, from: principal, feeAccount: feeAccount)
+        return try await removePermissions(flags, account: account, from: principal, signer: signer, feeAccount: feeAccount)
     }
     
     @discardableResult
     public func removePermissions(
         _ flags: [Permission.BaseFlag],
         from principalPubKey: String,
+        signer: Account? = nil,
         feeAccount: Account? = nil
     ) async throws -> PublishResult {
         guard let account else { throw KeetaClientError.missingAccount }
         let principal = try AccountBuilder.create(fromPublicKey: principalPubKey)
-        return try await removePermissions(flags, account: account, from: principal, feeAccount: feeAccount)
+        return try await removePermissions(flags, account: account, from: principal, signer: signer, feeAccount: feeAccount)
     }
     
     @discardableResult
@@ -487,10 +485,11 @@ public final class KeetaClient {
         _ flags: [Permission.BaseFlag],
         account: Account,
         from principalPubKey: String,
+        signer: Account? = nil,
         feeAccount: Account? = nil
     ) async throws -> PublishResult {
         let principal = try AccountBuilder.create(fromPublicKey: principalPubKey)
-        return try await removePermissions(flags, account: account, from: principal, feeAccount: feeAccount)
+        return try await removePermissions(flags, account: account, from: principal, signer: signer, feeAccount: feeAccount)
     }
     
     @discardableResult
@@ -498,6 +497,7 @@ public final class KeetaClient {
         _ flags: [Permission.BaseFlag],
         account: Account,
         from principal: Account,
+        signer: Account? = nil,
         feeAccount: Account? = nil
     ) async throws -> PublishResult {
         let modifyPermission = ModifyPermissionsOperation(
@@ -511,6 +511,7 @@ public final class KeetaClient {
         let modifyBlock = try BlockBuilder()
             .start(from: accountHeadblock, network: config.network.id)
             .add(account: account)
+            .add(signer: signer)
             .add(operation: modifyPermission)
             .seal()
         

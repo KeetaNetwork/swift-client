@@ -177,6 +177,33 @@ struct CertificatesTests {
         )
         
         #expect(expected.matches(cert))
+        
+        // Parse attributes via the new Certificate.attributes API
+        let attributes = try cert.kycAttributes
+
+        // Verify expected KYC attributes are present
+        let expectedOIDs: Set<OID> = [
+            .kycFullName,
+            .kycFirstName,
+            .kycLastName,
+            .kycDateOfBirth,
+            .kycAddress,
+            .kycEmail,
+            .kycPhoneNumber,
+            .kycEntityType,
+            .kycNationality,
+            .kycDocumentDriversLicense,
+        ]
+
+        #expect(attributes.count == expectedOIDs.count)
+        for oid in expectedOIDs {
+            #expect(attributes[oid] != nil, "Missing attribute: \(oid.rawValue)")
+        }
+
+        // All attributes should be sensitive (encrypted)
+        for (oid, attr) in attributes {
+            #expect(attr.isSensitive, "Expected \(oid) to be sensitive")
+        }
     }
 }
 

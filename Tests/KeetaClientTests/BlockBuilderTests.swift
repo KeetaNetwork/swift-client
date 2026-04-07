@@ -92,8 +92,8 @@ final class BlockBuilderTests: XCTestCase {
                 let finalBlock = try BlockBuilder(version: version)
                     .start(from: nil, network: 0)
                     .add(signer: account1)
-                    .add(operation: SendOperation(amount: 10, to: account2, token: baseToken))
-                    .add(operation: SendOperation(amount: 20, to: account3, token: baseToken))
+                    .add(operation: SendOperation(amount: TokenAmount(raw: 10), to: account2, token: baseToken))
+                    .add(operation: SendOperation(amount: TokenAmount(raw: 20), to: account3, token: baseToken))
                     .add(operation: SetRepOperation(to: account3))
                     .seal(created: created1)
                 
@@ -118,7 +118,7 @@ final class BlockBuilderTests: XCTestCase {
                 let subsequentBlock = try BlockBuilder(version: version)
                     .start(from: finalBlock.hash, network: 0)
                     .add(signer: account1)
-                    .add(operation: SendOperation(amount: 10, to: account2, token: baseToken, external: "test"))
+                    .add(operation: SendOperation(amount: TokenAmount(raw: 10), to: account2, token: baseToken, external: "test"))
                     .seal(created: created2)
                 if expectedHashes.count == 2 {
                     XCTAssertEqual(subsequentBlock.hash, expectedHashes[1])
@@ -138,7 +138,7 @@ final class BlockBuilderTests: XCTestCase {
             .start(from: nil, network: 31)
             .add(signer: fullAccount)
             .add(account: publicAccount)
-            .add(operation: TokenAdminModifyBalanceOperation(token: baseToken, amount: .init(10), method: .add))
+            .add(operation: TokenAdminModifyBalanceOperation(token: baseToken, amount: TokenAmount(raw: 10), method: .add))
             .seal(created: created)
         
         // generated using TS node v0.10.6
@@ -178,8 +178,8 @@ final class BlockBuilderTests: XCTestCase {
         let finalBlock = try BlockBuilder(version: .v1)
             .start(from: nil, network: 0)
             .add(signer: account1)
-            .add(operation: SendOperation(amount: 10, to: account2, token: baseToken))
-            .add(operation: SendOperation(amount: 20, to: account3, token: baseToken))
+            .add(operation: SendOperation(amount: TokenAmount(raw: 10), to: account2, token: baseToken))
+            .add(operation: SendOperation(amount: TokenAmount(raw: 20), to: account3, token: baseToken))
             .add(operation: SetRepOperation(to: account3))
             .seal(with: signature, created: created)
         
@@ -207,8 +207,8 @@ final class BlockBuilderTests: XCTestCase {
             _ = try BlockBuilder()
                 .start(from: nil, network: 0)
                 .add(signer: account1)
-                .add(operation: SendOperation(amount: 10, to: account2, token: self.baseToken))
-                .add(operation: SendOperation(amount: 20, to: account3, token: self.baseToken))
+                .add(operation: SendOperation(amount: TokenAmount(raw: 10), to: account2, token: self.baseToken))
+                .add(operation: SendOperation(amount: TokenAmount(raw: 20), to: account3, token: self.baseToken))
                 .add(operation: SetRepOperation(to: account3))
                 .seal(with: invalidSignature)
         }
@@ -216,7 +216,7 @@ final class BlockBuilderTests: XCTestCase {
     
     func test_sealingBlockErrors() throws {
         let account = try AccountBuilder.create(fromSeed: seed, index: 0)
-        let sendOperation = try SendOperation(amount: 10, to: account, token: baseToken)
+        let sendOperation = try SendOperation(amount: TokenAmount(raw: 10), to: account, token: baseToken)
         
         captureError(BlockBuilderError.insufficentDataToSignBlock, failure: "Should not be possible to sign empty block data.") {
             _ = try BlockBuilder().seal()

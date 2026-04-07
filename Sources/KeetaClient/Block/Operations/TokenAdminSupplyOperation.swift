@@ -34,8 +34,8 @@ public struct TokenAdminSupplyOperation: BlockOperation {
     public let amount: BigInt
     public let method: AdminSupplyAdjustMethod
     
-    public init(amount: BigInt, method: AdminSupplyAdjustMethod) {
-        self.amount = amount
+    public init(amount: TokenAmount, method: AdminSupplyAdjustMethod) {
+        self.amount = amount.raw
         self.method = method
     }
     
@@ -50,7 +50,7 @@ public struct TokenAdminSupplyOperation: BlockOperation {
               let method = AdminSupplyAdjustMethod(rawValue: Int(methodRaw)) else {
             throw TokenAdminSupplyOperationError.invalidAdjustMethod
         }
-        self.init(amount: amount, method: method)
+        self.init(amount: TokenAmount(raw: amount), method: method)
     }
     
     public func asn1Values() -> [ASN1] {

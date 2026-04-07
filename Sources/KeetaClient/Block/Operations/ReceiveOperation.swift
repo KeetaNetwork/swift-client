@@ -40,7 +40,7 @@ public struct ReceiveOperation: BlockOperation {
     public let forward: Account.PublicKeyAndType?
     
     public init(
-        amount: BigInt,
+        amount: TokenAmount,
         tokenPubKey: String,
         fromPubKey: String,
         exact: Bool,
@@ -53,13 +53,13 @@ public struct ReceiveOperation: BlockOperation {
     }
     
     public init(
-        amount: BigInt,
+        amount: TokenAmount,
         token: Account,
         from: Account,
         exact: Bool,
         forward: Account? = nil
     ) throws {
-        self.amount = amount
+        self.amount = amount.raw
         self.token = token.publicKeyAndType
         self.from = from.publicKeyAndType
         self.forward = forward?.publicKeyAndType
@@ -106,7 +106,7 @@ public struct ReceiveOperation: BlockOperation {
             forward = nil
         }
         
-        try self.init(amount: amount, token: token, from: from, exact: exact, forward: forward)
+        try self.init(amount: TokenAmount(raw: amount), token: token, from: from, exact: exact, forward: forward)
     }
     
     public func asn1Values() -> [PotentASN1.ASN1] {

@@ -6,10 +6,7 @@ public struct NetworkConfig {
     public let reps: [ClientRepresentative]
     
     public static func create(for network: NetworkAlias) throws -> Self {
-        let baseTokenPubKey = switch network {
-        case .test: "keeta_anyiff4v34alvumupagmdyosydeq24lc4def5mrpmmyhx3j6vj2uucckeqn52"
-        case .main: "keeta_anqdilpazdekdu4acw65fj7smltcp26wbrildkqtszqvverljpwpezmd44ssg"
-        }
+        let baseToken = try AccountBuilder.generateBaseAddresses(for: network).baseToken
         
         let baseTokenDecimals = switch network {
         case .test: 9
@@ -25,7 +22,7 @@ public struct NetworkConfig {
         
         return .init(
             network: network,
-            baseToken: try AccountBuilder.create(fromPublicKey: baseTokenPubKey),
+            baseToken: baseToken,
             baseTokenDecimals: baseTokenDecimals,
             fountain: try fountainSeed.map { try AccountBuilder.create(fromSeed: $0, index: 0xffffffff) },
             reps: (1...numberOfReps).map {

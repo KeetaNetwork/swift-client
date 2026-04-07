@@ -11,6 +11,7 @@ public enum ErrorType: String, Decodable {
 }
 
 public enum ErrorCode: String, Decodable {
+    // LEDGER
     case successorVoteExists = "LEDGER_SUCCESSOR_VOTE_EXISTS"
     case ledgerInvalidChain = "LEDGER_INVALID_CHAIN"
     case ledgerReceiveNotMet = "LEDGER_RECEIVE_NOT_MET"
@@ -20,13 +21,17 @@ public enum ErrorCode: String, Decodable {
     case ledgerNotEmpty = "LEDGER_NOT_EMPTY"
     case ledgerOther = "LEDGER_OTHER"
     case ledgerInsufficientVotingWeight = "LEDGER_INSUFFICIENT_VOTING_WEIGHT"
+    case missingRequiredFeeBlock = "LEDGER_MISSING_REQUIRED_FEE_BLOCK"
+    case quotesMismatch = "LEDGER_QUOTE_MISMATCH"
     case ledgerIdempotentKeyAlreadyExists = "LEDGER_IDEMPOTENT_KEY_EXISTS"
+    // BLOCK
     case blockOnlyTokenOperation = "BLOCK_ONLY_TOKEN_OP"
     case blockCertificateSubjectMismatch = "BLOCK_CERTIFICATE_SUBJECT_MISMATCH"
     case blockIntermediateCertificateOnlyAdd = "BLOCK_INTERMEDIATE_CERTIFICATES_ONLY_ADD"
     case blockNoTokenOperation = "BLOCK_NO_TOKEN_OP"
     case blockFieldInvalid = "BLOCK_GENERAL_FIELD_INVALID"
     case blockInvalidIdentifier = "BLOCK_IDENTIFIER_INVALID"
-    case missingRequiredFeeBlock = "LEDGER_MISSING_REQUIRED_FEE_BLOCK"
-    case quotesMismatch = "LEDGER_QUOTE_MISMATCH"
+    case blockPermissionsInvalidPrincipal = "BLOCK_PERMISSIONS_INVALID_PRINCIPAL"
+    // PERMISSIONS
+    case permissionFlagsAndTypesCannotMix = "PERMISSIONS_CANNOT_MIX_FLAGS_AND_TYPES"
 }

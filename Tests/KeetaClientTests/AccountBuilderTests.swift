@@ -355,6 +355,18 @@ final class AccountBuilderTests: XCTestCase {
         XCTAssertEqual(token.publicKeyString, "keeta_apawchjv3mp6odgesjluzgolzk6opwq3yzygmor2ojkkacjb4ra6anxxzwsti")
     }
     
+    func test_generateBaseTokenAddresses() throws {
+        let expectedBaseTokens: [NetworkAlias: String] = [
+            .main: "keeta_anqdilpazdekdu4acw65fj7smltcp26wbrildkqtszqvverljpwpezmd44ssg",
+            .test: "keeta_anyiff4v34alvumupagmdyosydeq24lc4def5mrpmmyhx3j6vj2uucckeqn52"
+        ]
+        
+        for network in [NetworkAlias.main, .test] {
+            let (_, baseToken) = try AccountBuilder.generateBaseAddresses(for: network)
+            XCTAssertEqual(baseToken.publicKeyString, expectedBaseTokens[network])
+        }
+    }
+
     func test_createFromPublicKeyAndType() throws {
         let encodedPublicKey = "keeta_aabm7moneqqjpaaee5vxjqoe5f2ay3dchgr2hysdfh4wg3ycylohabivswjyfci"
         let account = try AccountBuilder.create(fromPublicKey: encodedPublicKey)

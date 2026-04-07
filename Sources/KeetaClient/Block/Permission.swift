@@ -97,6 +97,13 @@ public struct Permission: Equatable {
         self.baseFlags = baseFlags
         self.external = external
     }
+
+    public func withAccess() -> Permission {
+        guard !baseFlags.isEmpty else { return self }
+        var copy = self
+        copy.baseFlags.insert(.ACCESS)
+        return copy
+    }
     
     public var isEmpty: Bool {
         baseFlags.isEmpty && external == 0

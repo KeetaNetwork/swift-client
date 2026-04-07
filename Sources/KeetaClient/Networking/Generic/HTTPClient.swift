@@ -65,6 +65,10 @@ extension HTTPClient {
             request.httpBody = try JSONSerialization.data(withJSONObject: body, options: [])
         }
         
+        return try await sendRequest(request)
+    }
+    
+    public func sendRequest(_ request: URLRequest) async throws -> Data {
         let (data, response) = try await URLSession.shared.data(for: request)
             
         guard let response = response as? HTTPURLResponse else {

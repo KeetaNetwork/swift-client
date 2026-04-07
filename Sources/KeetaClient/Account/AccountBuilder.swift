@@ -29,8 +29,18 @@ public struct AccountBuilder {
     }
     
     public static func create(for config: NetworkConfig) throws -> Account {
-        let seed = config.network.id.toData(length: 32).toBytes()
+        try create(for: config.network)
+    }
+
+    public static func create(for network: NetworkAlias) throws -> Account {
+        let seed = network.id.toData(length: 32).toBytes()
         return try create(fromSeed: seed, index: 0, algorithm: .NETWORK)
+    }
+
+    public static func generateBaseAddresses(for network: NetworkAlias) throws -> (networkAddress: Account, baseToken: Account) {
+        let networkAddress = try create(for: network)
+        let baseToken = try networkAddress.generateIdentifier(index: 0, type: .TOKEN)
+        return (networkAddress, baseToken)
     }
     
     public static func create(fromPublicKey publicKey: String) throws -> Account {

@@ -133,6 +133,14 @@ public struct Account: Codable, Hashable {
         return try keyPair.verify(data: data, signature: signature, using: verifier)
     }
     
+    public func encrypt(data: [UInt8]) throws -> [UInt8] {
+        try keyPair.encrypt(data: data, using: try keyAlgorithm.encryptor)
+    }
+
+    public func decrypt(data: [UInt8]) throws -> [UInt8] {
+        try keyPair.decrypt(data: data, using: try keyAlgorithm.encryptor)
+    }
+
     public func generateIdentifier(index: Int = 0, previous: String? = nil, type: KeyAlgorithm = .TOKEN) throws -> Account {
         if isIdentifier {
             guard keyAlgorithm == .NETWORK else {
@@ -181,6 +189,17 @@ extension Account {
                 case .ED25519: Ed25519.self
                 case .NETWORK, .TOKEN, .STORAGE: IdentifierKeyPair.self
                 case .MULTISIG: MultiSignatureKeyPair.self
+                }
+            }
+        }
+
+        var encryptor: Encryptable.Type {
+            get throws {
+                switch self {
+                case .ECDSA_SECP256K1: EciesP256K.self
+                case .ECDSA_SECP256R1: EciesP256R.self
+                case .ED25519: EciesEd25519.self
+                default: throw EncryptionError.encryptionNotSupported
                 }
             }
         }

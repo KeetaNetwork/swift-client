@@ -33,9 +33,9 @@ public struct TokenAdminModifyBalanceOperation: BlockOperation {
     public let amount: BigInt
     public let method: AdjustMethod
     
-    public init(token: Account, amount: BigInt, method: AdjustMethod) {
+    public init(token: Account, amount: TokenAmount, method: AdjustMethod) {
         self.token = token.publicKeyAndType
-        self.amount = amount
+        self.amount = amount.raw
         self.method = method
     }
     
@@ -58,7 +58,7 @@ public struct TokenAdminModifyBalanceOperation: BlockOperation {
             throw TokenAdminModifyBalanceOperationError.invalidAdjustMethod
         }
         
-        self.init(token: token, amount: amount, method: method)
+        self.init(token: token, amount: TokenAmount(raw: amount), method: method)
     }
     
     public func asn1Values() -> [ASN1] {

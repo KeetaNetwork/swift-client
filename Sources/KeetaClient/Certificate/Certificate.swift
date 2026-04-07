@@ -395,6 +395,15 @@ public struct Certificate: Hashable {
         self.intermediates = try intermediates?.map { try Certificate(from: $0, intermediates: nil) }
     }
     
+    public var kycAttributes: [OID: CertificateAttribute] {
+        get throws {
+            guard let kycExtension = extensions[.kyc] else {
+                return [:]
+            }
+            return try CertificateAttribute.parseKYCExtension(kycExtension.data)
+        }
+    }
+    
     public func toData() -> Data {
         data
     }

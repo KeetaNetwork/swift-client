@@ -47,7 +47,19 @@ public struct KeyPair: Equatable, Codable, Hashable {
     
     func verify(data: [UInt8], signature: [UInt8], using verifier: Verifiable.Type) throws -> Bool {
         let publicKeyBytes = try publicKey.toBytes()
-        
         return try verifier.verify(data: data, signature: signature, key: publicKeyBytes)
+    }
+
+    func encrypt(data: [UInt8], using encryptor: Encryptable.Type) throws -> [UInt8] {
+        let publicKeyBytes = try publicKey.toBytes()
+        return try encryptor.encrypt(data: data, publicKey: publicKeyBytes)
+    }
+
+    func decrypt(data: [UInt8], using encryptor: Encryptable.Type) throws -> [UInt8] {
+        guard let privateKey = privateKey else {
+            throw EncryptionError.noPrivateKey
+        }
+        let privateKeyBytes = try privateKey.toBytes()
+        return try encryptor.decrypt(data: data, privateKey: privateKeyBytes)
     }
 }

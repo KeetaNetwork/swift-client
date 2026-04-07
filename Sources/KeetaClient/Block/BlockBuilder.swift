@@ -103,7 +103,7 @@ public final class BlockBuilder {
         for vote in voteStape.votes {
             if let fee = vote.fee {
                 let send = try SendOperation(
-                    amount: fee.amount,
+                    amount: TokenAmount(raw: fee.amount),
                     to: fee.payTo ?? vote.issuer,
                     token: fee.token ?? baseToken
                 )

@@ -40,7 +40,7 @@ final class KeetaClientTests: XCTestCase {
         try await fund(account: newAccount, amount: 2)
         
         do {
-            _ = try await client.send(amount: 1, to: recipient)
+            _ = try await client.send(amount: .init(raw: 1), to: recipient)
             XCTFail("Expected insufficient balance to cover fees to block this transaction")
             return
         } catch BlockBuilderError.insufficientBalanceToCoverNetworkFees {
@@ -88,10 +88,10 @@ final class KeetaClientTests: XCTestCase {
         try await fund(account: account2, amount: 12)
         
         let client1 = KeetaClient(network: .test, account: account1, feeAccount: feeAccount)
-        try await client1.send(amount: 1, to: account2)
-        
+        try await client1.send(amount: .init(raw: 1), to: account2)
+
         let client2 = KeetaClient(network: .test, account: account2, feeAccount: feeAccount)
-        try await client2.send(amount: 2, to: account1)
+        try await client2.send(amount: .init(raw: 2), to: account1)
         
         let account1Transactions = try await client1.transactions()
         let account1ExpectedTransactions = [
@@ -126,9 +126,9 @@ final class KeetaClientTests: XCTestCase {
         
         let client = KeetaClient(network: .test)
         let token = client.config.baseToken
-        let offer = Proposal(amount: BigInt(1), token: token)
-        let ask = Proposal(amount: Double(2), token: token)
-        
+        let offer = Proposal(amount: TokenAmount(raw: 1), token: token)
+        let ask = Proposal(amount: TokenAmount(raw: 2), token: token)
+
         do {
             try await client.swap(account: account1, offer: offer, ask: ask, from: account2)
             XCTFail("Expected swap to fail as no fee account was explicitly provided")
@@ -154,9 +154,9 @@ final class KeetaClientTests: XCTestCase {
         
         let client = KeetaClient(network: .test)
         let token = client.config.baseToken
-        let offer = Proposal(amount: BigInt(1), token: token)
-        let ask = Proposal(amount: Double(2), token: token)
-        
+        let offer = Proposal(amount: TokenAmount(raw: 1), token: token)
+        let ask = Proposal(amount: TokenAmount(raw: 2), token: token)
+
         try await client.swap(account: account1, offer: offer, ask: ask, from: account2, feeAccount: feeAccount)
         
         // Verify balances
@@ -198,7 +198,7 @@ final class KeetaClientTests: XCTestCase {
         ]
         
         for icon in icons {
-            let token = try await client.createToken(name: "ICO", supply: BigInt(1), icon: icon)
+            let token = try await client.createToken(name: "ICO", supply: TokenAmount(raw: 1), icon: icon)
             let info = try await client.tokenInfo(for: token)
             
             switch info.icon {
@@ -225,7 +225,7 @@ final class KeetaClientTests: XCTestCase {
         let client = KeetaClient(network: .test, account: account)
         
         let supply = BigInt(100)
-        let token = try await client.createToken(name: "TEST", supply: supply, decimals: 7, description: "Automated Swift Test")
+        let token = try await client.createToken(name: "TEST", supply: TokenAmount(raw: supply), decimals: 7, description: "Automated Swift Test")
         
         let info = try await client.tokenInfo(for: token)
         XCTAssertEqual(info.name, "TEST")
@@ -237,15 +237,15 @@ final class KeetaClientTests: XCTestCase {
         XCTAssertEqual(tokenBalance.rawBalances[token.publicKeyString], supply)
         
         let recipient = try AccountBuilder.new()
-        let sendAmount = BigInt(10)
+        let sendAmount = TokenAmount(raw: 10)
         let options = Options(signer: account, feeAccount: account)
         try await client.send(amount: sendAmount, from: token, to: recipient, token: token, options: options)
-        
+
         tokenBalance = try await client.balance(of: token)
-        XCTAssertEqual(tokenBalance.rawBalances[token.publicKeyString], supply - sendAmount)
+        XCTAssertEqual(tokenBalance.rawBalances[token.publicKeyString], supply - sendAmount.raw)
         
         let recipientBalance = try await client.balance(of: recipient)
-        XCTAssertEqual(recipientBalance.rawBalances[token.publicKeyString], sendAmount)
+        XCTAssertEqual(recipientBalance.rawBalances[token.publicKeyString], sendAmount.raw)
     }
     
     func test_recoverAccount() async throws {
@@ -260,7 +260,7 @@ final class KeetaClientTests: XCTestCase {
         // Get account stuck by requesting temporary votes for conflicting blocks
         
         // Request temporary votes for first block
-        let send = try SendOperation(amount: 1, to: recipient, token: client.config.baseToken)
+        let send = try SendOperation(amount: TokenAmount(raw: 1), to: recipient, token: client.config.baseToken)
         let sendBlock1 = try BlockBuilder()
             .start(from: nil, config: client.config)
             .add(account: account)
@@ -387,12 +387,12 @@ final class KeetaClientTests: XCTestCase {
         // 3. Get KTA test tokens from the faucet: https://faucet.test.keeta.com/
         
         // 4. Create a new token with an initial supply
-        let newToken = try await client.createToken(name: "DEMO", supply: BigInt(100))
+        let newToken = try await client.createToken(name: "DEMO", supply: TokenAmount(raw: 100))
 
         // 5. Send some of minted tokens to the generated account
         // ℹ️ Token accounts can't sign transactions — use the owner (account) as signer
         let options = Options(signer: account)
-        try await client.send(amount: BigInt(10), from: newToken, to: account, token: newToken, options: options)
+        try await client.send(amount: .init(raw: 10), from: newToken, to: account, token: newToken, options: options)
 
         // 6. Check the account's balance
         let accountBalance = try await client.balance()
@@ -402,7 +402,7 @@ final class KeetaClientTests: XCTestCase {
         let recipient = try AccountBuilder.create(fromSeed: seed, index: 1)
 
         // 8. Send tokens from the funded account to the new recipient
-        try await client.send(amount: BigInt(5), to: recipient, token: newToken)
+        try await client.send(amount: .init(raw: 5), to: recipient, token: newToken)
 
         // 9.Check the recipient's balance
         let recipientBalance = try await client.balance(of: recipient)
@@ -415,8 +415,8 @@ final class KeetaClientTests: XCTestCase {
         // 11. Token swap between the two accounts
         try await client.swap(
             with: recipient,
-            offer: .init(amount: BigInt(1), token: newToken),
-            ask: .init(amount: BigInt(5), token: newToken)
+            offer: .init(amount: TokenAmount(raw: 1), token: newToken),
+            ask: .init(amount: TokenAmount(raw: 5), token: newToken)
         )
     }
     
