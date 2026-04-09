@@ -1,9 +1,14 @@
 import Foundation
 
-public enum NetworkAlias: String {
+public enum NetworkAlias: String, CaseIterable {
     case test
     case main
     
+    public init?(id: NetworkID) {
+        guard let match = Self.allCases.first(where: { $0.id == id }) else { return nil }
+        self = match
+    }
+
     public var id: NetworkID {
         switch self {
         case .test: 0x54455354 // 1413829460

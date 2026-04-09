@@ -444,6 +444,34 @@ final class KeetaClientTests: XCTestCase {
         }
     }
     
+    func test_payFeesInUSDC() async throws {
+        let account = try AccountBuilder.new()
+        let recipient = try AccountBuilder.new()
+        let usdcToken = try AccountBuilder.create(fromPublicKey: "keeta_apna75yhhvnv4ei7ape55hndk4yepno7a7i2mhtiwahiygixjcnmvswxhnmnk")
+
+        let client = KeetaClient(network: .test)
+        
+        // Fund account with USDC
+        try await client.send(amount: .init(raw: 100), from: wellFundedAccount, to: account, token: usdcToken)
+        
+        // Get quotes and make sure USDC is supported
+        let quotes = try await client.sendQuotes(for: .init(raw: 10), from: account, to: recipient, token: usdcToken)
+        
+        // Verify we got fee quotes both for KTA & USDC
+        XCTAssertTrue(quotes.allSatisfy({ $0.fee.entry(for: client.config.baseToken, isBaseToken: true) != nil }))
+        XCTAssertTrue(quotes.allSatisfy({ $0.fee.entry(for: usdcToken, isBaseToken: false) != nil }))
+        
+        // Make transfer
+        try await client.send(amount: .init(raw: 10), from: account, to: recipient, token: usdcToken, options: .init(voteQuotes: quotes))
+
+        // Verify balances
+        let senderBalance = try await client.balance(of: account)
+        XCTAssertEqual(senderBalance.rawBalances[usdcToken.publicKeyString], 6) // total (100) - amount sent (10) - fees (84)
+        
+        let recipientBalance = try await client.balance(of: recipient)
+        XCTAssertEqual(recipientBalance.rawBalances[usdcToken.publicKeyString], 10)
+    }
+
     private func fund(account: Account, amount: BigInt) async throws {
         let config: NetworkConfig = try .create(for: .test)
         let api = try KeetaApi(config: config)

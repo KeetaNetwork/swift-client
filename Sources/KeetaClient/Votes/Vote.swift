@@ -125,7 +125,11 @@ public extension [Vote] {
     var fees: [Fee] {
         compactMap { $0.fee }
     }
-    
+
+    var feeEntries: [FeeEntry] {
+        fees.flatMap { $0.entries }
+    }
+
     var requiresFees: Bool {
         contains { $0.fee != nil }
     }

@@ -11,7 +11,7 @@ class ApiTests: XCTestCase {
     
     override func setUp() async throws {
         config = try .create(for: .test)
-        wellFundedAccount = try AccountBuilder.create(fromSeed: wellFundedAccountSeed, index: 12)
+        wellFundedAccount = try AccountBuilder.create(fromSeed: wellFundedAccountSeed, index: 13)
         print(wellFundedAccount.publicKeyString)
         
         // Try to recover well funded account if needed
@@ -95,7 +95,7 @@ class ApiTests: XCTestCase {
         let removeOperation = ModifyCertificateOperation(operation: .remove(hash: fetchedCertificate.hash))
         
         let removeBlock = try BlockBuilder()
-            .start(from: addPublishResult.feeBlockHash, network: config.network.id)
+            .start(from: addPublishResult.lastBlockHash(for: certAccount), network: config.network.id)
             .add(account: certAccount)
             .add(operation: removeOperation)
             .seal()
@@ -165,7 +165,7 @@ class ApiTests: XCTestCase {
                     for: recoveredStaple, account: newAccount, network: config, previous: sendBlock.hash
                 )
                 blocksToPublish = [sendBlock, fee]
-                totalFees = recoveredStaple.totalFees
+                totalFees = recoveredStaple.totalFees(baseToken: config.baseToken, supportedByAllVotes: true)[config.baseToken.publicKeyString] ?? 0
             } else {
                 blocksToPublish = [sendBlock]
                 totalFees = 0
@@ -497,14 +497,13 @@ class ApiTests: XCTestCase {
         let tempVotes = try await api.votes(for: [sendBlock], type: .temporary(quotes: quotes))
         
         // Expects quotes and fees are matching
-        XCTAssertEqual(
-            Set(tempVotes.fees.map { $0.payTo?.publicKeyString }),
-            Set(quotes.map { $0.fee.payTo?.publicKeyString })
-        )
-        XCTAssertEqual(
-            tempVotes.fees.map { $0.amount },
-            quotes.map { $0.fee.amount }
-        )
+        let votePayTos = Set(tempVotes.feeEntries.map { $0.payTo?.publicKeyString })
+        let quotePayTos = Set(quotes.flatMap { $0.fee.entries }.map { $0.payTo?.publicKeyString })
+        XCTAssertEqual(votePayTos, quotePayTos)
+
+        let voteAmounts = tempVotes.feeEntries.map { $0.amount }
+        let quoteAmounts = quotes.flatMap { $0.fee.entries }.map { $0.amount }
+        XCTAssertEqual(voteAmounts, quoteAmounts)
     }
     
     func test_modifyPermissionSendOnBehalf() async throws {

@@ -1,4 +1,5 @@
 import XCTest
+import BigInt
 import KeetaClient
 
 final class VoteTests: XCTestCase {
@@ -27,10 +28,11 @@ final class VoteTests: XCTestCase {
         let vote = try Vote.create(from: voteBinary)
         
         let fee = try XCTUnwrap(vote.fee)
-        XCTAssertEqual(fee.amount, 1)
         XCTAssertFalse(fee.quote)
-        XCTAssertEqual(fee.token?.publicKeyString, "keeta_apawchjv3mp6odgesjluzgolzk6opwq3yzygmor2ojkkacjb4ra6anxxzwsti")
-        XCTAssertNil(fee.payTo)
+        XCTAssertEqual(fee.entries.count, 1)
+        XCTAssertEqual(fee.entries[0].amount, 1)
+        XCTAssertEqual(fee.entries[0].token?.publicKeyString, "keeta_apawchjv3mp6odgesjluzgolzk6opwq3yzygmor2ojkkacjb4ra6anxxzwsti")
+        XCTAssertNil(fee.entries[0].payTo)
     }
     
     func test_parsePermanentVoteFromBinary() throws {
@@ -40,5 +42,51 @@ final class VoteTests: XCTestCase {
         let vote = try Vote.create(from: voteBinary)
         
         XCTAssertTrue(vote.permanent)
+    }
+
+    func test_parseMultiFeeFromData() throws {
+        // Multi-fee ASN.1 data generated using TS node v0.16.0
+        // Contains 2 fee entries: [100 with payTo1] and [200 with payTo2 + token1]
+        let feeDataHex = "a08180a07e307c302a010100020164802200036e374f9dbe77a27431810939d6aef7592bef14c5e4551879cedbd5cb9a104548304e010100020200c880220003bdd902b894fb968a2228bc48bd56ad6093c82a4494abe0ebe7970656ec52eb7181210309e6eca3986533b9a69a27c01f58148618514db98185810eb1784a7e2ff7df7f"
+        let feeData = try feeDataHex.toBytes()
+
+        let fee = try Fee(from: Data(feeData))
+
+        XCTAssertFalse(fee.quote)
+        XCTAssertEqual(fee.entries.count, 2)
+
+        // First entry: amount 100, payTo set, no token
+        XCTAssertEqual(fee.entries[0].amount, 100)
+        XCTAssertEqual(fee.entries[0].payTo?.publicKeyString, "keeta_aabw4n2ptw7hpituggaqsoowv33vsk7pctc6iviyphhnxvoltiieksfmzqefsha")
+        XCTAssertNil(fee.entries[0].token)
+
+        // Second entry: amount 200, payTo and token both set
+        XCTAssertEqual(fee.entries[1].amount, 200)
+        XCTAssertEqual(fee.entries[1].payTo?.publicKeyString, "keeta_aab33wicxckpxfukeiulysf5k2wwbe6ifjcjjk7a5ptzobsw5rjow4m6hhhieuq")
+        XCTAssertNotNil(fee.entries[1].token)
+        XCTAssertEqual(fee.entries[1].token?.publicKeyString, "keeta_ame6n3fdtbsthongtit4ah2ycsdbquknxgaylaiowf4eu7rp67px6lmfzmzqm")
+    }
+
+    func test_multiFeeSelectedEntry() throws {
+        let feeDataHex = "a08180a07e307c302a010100020164802200036e374f9dbe77a27431810939d6aef7592bef14c5e4551879cedbd5cb9a104548304e010100020200c880220003bdd902b894fb968a2228bc48bd56ad6093c82a4494abe0ebe7970656ec52eb7181210309e6eca3986533b9a69a27c01f58148618514db98185810eb1784a7e2ff7df7f"
+        let feeData = try feeDataHex.toBytes()
+
+        let fee = try Fee(from: Data(feeData))
+
+        // isBaseToken: true matches entries with nil token (which default to base token)
+        let baseToken = try AccountBuilder.create(fromPublicKey: "keeta_aabw4n2ptw7hpituggaqsoowv33vsk7pctc6iviyphhnxvoltiieksfmzqefsha")
+        let selected = try XCTUnwrap(fee.entry(for: baseToken, isBaseToken: true))
+        XCTAssertEqual(selected.amount, 100)
+        XCTAssertNil(selected.token)
+
+        // Exact token match returns the second entry
+        let token1 = try AccountBuilder.create(fromPublicKey: "keeta_ame6n3fdtbsthongtit4ah2ycsdbquknxgaylaiowf4eu7rp67px6lmfzmzqm")
+        let tokenEntry = try XCTUnwrap(fee.entry(for: token1))
+        XCTAssertEqual(tokenEntry.amount, 200)
+        XCTAssertEqual(tokenEntry.token?.publicKeyString, token1.publicKeyString)
+
+        // Unknown token returns nil
+        let unknownToken = try AccountBuilder.create(fromPublicKey: "keeta_aabznoicrzvte6ql5rxbgugmfrjqubbnjuo5l6ivopowy4rpkqgs5fco3oaezcq")
+        XCTAssertNil(fee.entry(for: unknownToken))
     }
 }

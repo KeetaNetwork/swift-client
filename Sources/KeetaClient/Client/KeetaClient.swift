@@ -12,13 +12,24 @@ public struct Options {
     public let idempotency: String?
     public let signer: Account?
     public let feeAccount: Account?
+    public let feeToken: Account?
     public let memo: String?
-    
-    public init(idempotency: String? = nil, signer: Account? = nil, feeAccount: Account? = nil, memo: String? = nil) {
+    public let voteQuotes: [VoteQuote]?
+
+    public init(
+        idempotency: String? = nil,
+        signer: Account? = nil,
+        feeAccount: Account? = nil,
+        feeToken: Account? = nil,
+        memo: String? = nil,
+        voteQuotes: [VoteQuote]? = nil
+    ) {
         self.idempotency = idempotency
         self.signer = signer
         self.feeAccount = feeAccount
+        self.feeToken = feeToken
         self.memo = memo
+        self.voteQuotes = voteQuotes
     }
 }
 
@@ -102,13 +113,85 @@ public final class KeetaClient {
         token: Account,
         options: Options? = nil
     ) async throws -> PublishResult {
+        let (sendBlock, balance) = try await buildSendBlock(
+            amount: amount, from: fromAccount, to: toAccount, token: token, options: options
+        )
+
+        let result = try await api.publish(blocks: [sendBlock], quotes: options?.voteQuotes) { voteStaple in
+            let accountToPayFees: Account
+            let feeAccountBalance: AccountBalance
+            
+            if let feeAccount = options?.feeAccount ?? self.feeAccount,
+               feeAccount.publicKeyString != fromAccount.publicKeyString {
+                accountToPayFees = feeAccount
+                feeAccountBalance = try await self.api.balance(for: feeAccount)
+            } else {
+                accountToPayFees = fromAccount
+                feeAccountBalance = balance
+            }
+            
+            let feeToken = try feeAccountBalance.selectFeeToken(for: voteStaple, baseToken: self.config.baseToken, preferredToken: options?.feeToken)
+
+            return try await BlockBuilder.feeBlock(
+                for: voteStaple, account: accountToPayFees, signer: options?.signer, feeToken: feeToken, network: self.config
+            )
+        }
+        
+        return result
+    }
+
+    // MARK: Vote Quotes
+
+    public func sendQuotes(for amount: TokenAmount, to toPubKeyAccount: String, options: Options? = nil) async throws -> [VoteQuote] {
+        let toAccount = try AccountBuilder.create(fromPublicKey: toPubKeyAccount)
+        return try await sendQuotes(for: amount, to: toAccount, options: options)
+    }
+
+    public func sendQuotes(for amount: TokenAmount, to toAccount: Account, options: Options? = nil) async throws -> [VoteQuote] {
+        guard let account else { throw KeetaClientError.missingAccount }
+        return try await sendQuotes(for: amount, from: account, to: toAccount, token: config.baseToken, options: options)
+    }
+
+    public func sendQuotes(for amount: TokenAmount, to toAccount: Account, token tokenPubKey: String, options: Options? = nil) async throws -> [VoteQuote] {
+        guard let account else { throw KeetaClientError.missingAccount }
+        let token = try AccountBuilder.create(fromPublicKey: tokenPubKey)
+        return try await sendQuotes(for: amount, from: account, to: toAccount, token: token, options: options)
+    }
+
+    public func sendQuotes(for amount: TokenAmount, to toAccount: Account, token: Account, options: Options? = nil) async throws -> [VoteQuote] {
+        guard let account else { throw KeetaClientError.missingAccount }
+        return try await sendQuotes(for: amount, from: account, to: toAccount, token: token, options: options)
+    }
+
+    public func sendQuotes(
+        for amount: TokenAmount,
+        from fromAccount: Account,
+        to toAccount: Account,
+        token: Account,
+        options: Options? = nil
+    ) async throws -> [VoteQuote] {
+        let (sendBlock, _) = try await buildSendBlock(
+            amount: amount, from: fromAccount, to: toAccount, token: token, options: options
+        )
+        return try await api.voteQuotes(for: [sendBlock])
+    }
+
+    // MARK: Private
+
+    private func buildSendBlock(
+        amount: TokenAmount,
+        from fromAccount: Account,
+        to toAccount: Account,
+        token: Account,
+        options: Options?
+    ) async throws -> (block: Block, balance: AccountBalance) {
         guard token.keyAlgorithm == .TOKEN else {
             throw KeetaClientError.invalidTokenAccount
         }
 
         let balance = try await api.balance(for: fromAccount)
         let send = try SendOperation(amount: amount, to: toAccount, token: token, external: options?.memo)
-        
+
         let sendBlock = try blockBuilder()
             .start(from: balance.currentHeadBlock, network: config.network.id)
             .add(account: fromAccount)
@@ -117,24 +200,7 @@ public final class KeetaClient {
             .add(signer: options?.signer)
             .seal()
         
-        let result = try await api.publish(blocks: [sendBlock]) {
-            let accountToPayFees: Account
-            if let feeAccount = options?.feeAccount ?? self.feeAccount,
-               feeAccount.publicKeyString != fromAccount.publicKeyString {
-                accountToPayFees = feeAccount
-            } else {
-                let fees = $0.totalFees(baseToken: self.config.baseToken)
-                
-                guard balance.canCover(fees: fees) else {
-                    throw BlockBuilderError.insufficientBalanceToCoverNetworkFees
-                }
-                
-                accountToPayFees = fromAccount
-            }
-            return try await BlockBuilder.feeBlock(for: $0, account: accountToPayFees, network: self.config)
-        }
-        
-        return result
+        return (sendBlock, balance)
     }
     
     // MARK: Balance

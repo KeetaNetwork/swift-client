@@ -8,6 +8,7 @@ public enum BlockBuilderError: Error {
     case noPrivateKeyOrSignatureToSignBlock
     case invalidBalanceValue(String)
     case insufficientBalanceToCoverNetworkFees
+    case noFeeEntryForToken
 }
 
 public final class BlockBuilder {
@@ -25,95 +26,109 @@ public final class BlockBuilder {
     public static func feeBlock(
         for voteStape: VoteStaple,
         account: Account,
-        network: NetworkAlias,
-        previous: String?
-    ) throws -> Block {
-        try feeBlock(for: voteStape, account: account, network: .create(for: network), previous: previous)
-    }
-    
-    public static func feeBlock(
-        for voteStape: VoteStaple,
-        account: Account,
-        network: NetworkAlias
-    ) async throws -> Block {
-        try await feeBlock(for: voteStape, account: account, network: .create(for: network))
-    }
-    
-    public static func feeBlock(
-        for voteStape: VoteStaple,
-        account: Account,
-        network: NetworkConfig,
-        previous: String?
-    ) throws -> Block {
-        try feeBlock(for: voteStape, account: account, networkId: network.network.id, baseToken: network.baseToken, previous: previous)
-    }
-    
-    public static func feeBlock(
-        for voteStape: VoteStaple,
-        account: Account,
+        signer: Account? = nil,
+        feeToken: Account? = nil,
         network: NetworkConfig
     ) async throws -> Block {
-        try await feeBlock(for: voteStape, account: account, api: KeetaApi(config: network))
+        try await feeBlock(for: voteStape, account: account, signer: signer, feeToken: feeToken, api: KeetaApi(config: network))
     }
     
     public static func feeBlock(
         for voteStape: VoteStaple,
         account: Account,
+        signer: Account? = nil,
+        feeToken: Account? = nil,
         api: KeetaApi
     ) async throws -> Block {
         let previous: String?
+        let resolvedFeeToken: Account?
         if let block = voteStape.blocks.last(where: { $0.rawData.account.publicKeyString == account.publicKeyString }) {
             // latest block hash of account is available within staple
             previous = block.hash
+            resolvedFeeToken = feeToken
         } else {
             // fetch latest block hash from account chain
             let balance = try await api.balance(for: account)
-            
-            let fees = voteStape.totalFees(baseToken: api.baseToken)
-            
-            guard balance.canCover(fees: fees) else {
-                throw BlockBuilderError.insufficientBalanceToCoverNetworkFees
-            }
-            
+            resolvedFeeToken = try balance.selectFeeToken(for: voteStape, baseToken: api.baseToken, preferredToken: feeToken)
             previous = balance.currentHeadBlock
         }
-        
+
         return try feeBlock(
             for: voteStape,
             account: account,
+            signer: signer,
+            feeToken: resolvedFeeToken,
             networkId: api.networkId,
             baseToken: api.baseToken,
             previous: previous
         )
     }
-    
+
     public static func feeBlock(
         for voteStape: VoteStaple,
         account: Account,
+        signer: Account? = nil,
+        network: NetworkConfig,
+        feeToken: Account? = nil,
+        previous: String?
+    ) throws -> Block {
+        try feeBlock(
+            for: voteStape,
+            account: account,
+            signer: signer,
+            feeToken: feeToken,
+            networkId: network.network.id,
+            baseToken: network.baseToken,
+            previous: previous
+        )
+    }
+
+    public static func feeBlock(
+        for voteStape: VoteStaple,
+        account: Account,
+        signer: Account? = nil,
+        feeToken: Account? = nil,
         networkId: NetworkID,
         baseToken: Account,
         previous: String?
     ) throws -> Block {
-        guard account.canSign else {
+        guard (signer ?? account).canSign else {
             throw BlockBuilderError.insufficentDataToSignBlock
         }
-        
+
+        // Treat an explicit base token as "no preference" aka nil
+        let preferredFeeToken: Account? = feeToken?.publicKeyString == baseToken.publicKeyString ? nil : feeToken
+
         // Pay each vote issuer aka rep their respected fee
         var operations = [SendOperation]()
         for vote in voteStape.votes {
             if let fee = vote.fee {
+                let entry: FeeEntry
+                if let preferredFeeToken {
+                    guard let match = fee.entry(for: preferredFeeToken) else {
+                        throw BlockBuilderError.noFeeEntryForToken
+                    }
+                    entry = match
+                } else {
+                    // Prefer base token, fall back to first available entry
+                    guard let match = fee.entry(for: baseToken, isBaseToken: true) ?? fee.entries.first else {
+                        throw BlockBuilderError.noFeeEntryForToken
+                    }
+                    entry = match
+                }
                 let send = try SendOperation(
-                    amount: TokenAmount(raw: fee.amount),
-                    to: fee.payTo ?? vote.issuer,
-                    token: fee.token ?? baseToken
+                    amount: TokenAmount(raw: entry.amount),
+                    to: entry.payTo ?? vote.issuer,
+                    token: entry.token ?? baseToken
                 )
                 operations.append(send)
             }
         }
-        
+
         return try BlockBuilder(purpose: .fee)
             .start(from: previous, network: networkId)
             .add(account: account)
+            .add(signer: signer)
             .add(operations: operations)
             .seal()
     }

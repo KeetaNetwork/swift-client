@@ -143,21 +143,37 @@ public struct VoteStaple {
         data.base64EncodedString()
     }
     
-    /// Totoal amount of each token
-    public func totalFees(baseToken: Account) -> [String: BigInt] {
-        var result: [String: BigInt] = [:]
-        for vote in votes {
-            if let fee = vote.fee {
-                let token = (fee.token ?? baseToken).publicKeyString
-                result[token, default: 0] += fee.amount
+    /// Total fee amount per token option.
+    /// When `supportedByAllVotes` is true, only includes tokens supported by every vote.
+    public func totalFees(baseToken: Account, supportedByAllVotes: Bool) -> [String: BigInt] {
+        let votesWithFees = votes.filter { $0.fee != nil }
+        guard !votesWithFees.isEmpty else { return [:] }
+
+        // Collect all token keys each vote supports
+        let tokenKeysPerVote = votesWithFees.map { vote in
+            vote.fee!.entries.map { ($0.token ?? baseToken).publicKeyString }
+        }
+
+        // Determine viable tokens
+        var viableTokens = Set(tokenKeysPerVote[0])
+        for keys in tokenKeysPerVote.dropFirst() {
+            if supportedByAllVotes {
+                viableTokens.formIntersection(keys)
+            } else {
+                viableTokens.formUnion(keys)
             }
         }
-        return result
-    }
-    
-    public var totalFees: BigInt {
-        votes.reduce(0) { result, vote in
-            result + (vote.fee?.amount ?? 0)
+
+        // Sum amounts per viable token
+        var result: [String: BigInt] = [:]
+        for vote in votesWithFees {
+            for entry in vote.fee!.entries {
+                let key = (entry.token ?? baseToken).publicKeyString
+                guard viableTokens.contains(key) else { continue }
+                result[key, default: 0] += entry.amount
+            }
         }
+
+        return result
     }
 }

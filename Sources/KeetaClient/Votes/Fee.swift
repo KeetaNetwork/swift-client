@@ -3,7 +3,12 @@ import BigInt
 import PotentASN1
 
 /*
- FeeData ::= [0] EXPLICIT SEQUENCE {
+ FeeData ::= [0] EXPLICIT CHOICE {
+     singleFee    FeeEntry,
+     multipleFees [0] EXPLICIT SEQUENCE OF FeeEntry
+ }
+ 
+ FeeEntry ::= SEQUENCE {
      -- TRUE = QUOTE, FALSE = VOTE
      quote        BOOLEAN,
      -- Amount to modify the balance by
@@ -22,49 +27,30 @@ public enum FeeError: Error {
     case invalidQuote
     case invalidAmount
     case invalidImplicitTag
+    case inconsistentQuote
+    case emptyFeeEntries
 }
 
-public struct Fee {
-    public let quote: Bool
+public struct FeeEntry {
     public let amount: BigInt
     public let payTo: Account?
     public let token: Account?
-    
-    public init(quote: Bool, amount: BigInt, payTo: Account, token: Account) {
-        self.quote = quote
+
+    public init(amount: BigInt, payTo: Account? = nil, token: Account? = nil) {
         self.amount = amount
         self.payTo = payTo
         self.token = token
     }
-    
-    public init(from data: Data) throws {
-        let asn1 = try ASN1Serialization.asn1(fromDER: data)
-        try self.init(from: asn1)
-    }
-    
-    public init(from asn1: [ASN1]) throws {
-        guard let tag = asn1.first?.taggedValue, tag.isContextSpecific, tag.contextSpecificTag == 0 else {
-            throw FeeError.invalidContextSpecificTag
-        }
-        
-        let feesAsn1 = try ASN1Serialization.asn1(fromDER: tag.data)
-        
-        guard let sequence = feesAsn1.first?.sequenceValue else {
-            throw FeeError.invalidASN1Sequence
-        }
-        
+
+    init(from sequence: [ASN1]) throws {
         guard (2...4).contains(sequence.count) else {
             throw FeeError.invalidASN1SequenceLength
         }
-        
-        guard let quote = sequence[0].booleanValue else {
-            throw FeeError.invalidQuote
-        }
-        
+
         guard let amount = sequence[1].integerValue else {
             throw FeeError.invalidAmount
         }
-        
+
         var payTo: Account?
         var token: Account?
         for tagIndex in [2, 3] {
@@ -76,10 +62,85 @@ public struct Fee {
                 }
             }
         }
-        
-        self.quote = quote
+
         self.amount = amount
         self.payTo = payTo
         self.token = token
+    }
+}
+
+public struct Fee {
+    public let quote: Bool
+    public let entries: [FeeEntry]
+
+    public init(quote: Bool, entries: [FeeEntry]) {
+        self.quote = quote
+        self.entries = entries
+    }
+
+    public init(from data: Data) throws {
+        let asn1 = try ASN1Serialization.asn1(fromDER: data)
+        try self.init(from: asn1)
+    }
+
+    public init(from asn1: [ASN1]) throws {
+        guard let tag = asn1.first?.taggedValue, tag.isContextSpecific, tag.contextSpecificTag == 0 else {
+            throw FeeError.invalidContextSpecificTag
+        }
+
+        let feesAsn1 = try ASN1Serialization.asn1(fromDER: tag.data)
+
+        if let sequence = feesAsn1.first?.sequenceValue {
+            // Single fee format
+            guard let quote = sequence[0].booleanValue else {
+                throw FeeError.invalidQuote
+            }
+            self.quote = quote
+            self.entries = [try FeeEntry(from: sequence)]
+        } else if let innerTag = feesAsn1.first?.taggedValue, innerTag.isContextSpecific, innerTag.contextSpecificTag == 0 {
+            // Multi-fee format: [0] EXPLICIT SEQUENCE OF FeeEntry
+            let innerAsn1 = try ASN1Serialization.asn1(fromDER: innerTag.data)
+            guard let outerSequence = innerAsn1.first?.sequenceValue else {
+                throw FeeError.invalidASN1Sequence
+            }
+
+            var entries = [FeeEntry]()
+            var quote: Bool?
+
+            for element in outerSequence {
+                guard let entrySequence = element.sequenceValue else {
+                    throw FeeError.invalidASN1Sequence
+                }
+                guard let entryQuote = entrySequence[0].booleanValue else {
+                    throw FeeError.invalidQuote
+                }
+                if let existingQuote = quote {
+                    guard existingQuote == entryQuote else {
+                        throw FeeError.inconsistentQuote
+                    }
+                } else {
+                    quote = entryQuote
+                }
+                entries.append(try FeeEntry(from: entrySequence))
+            }
+
+            guard let quote, !entries.isEmpty else {
+                throw FeeError.emptyFeeEntries
+            }
+
+            self.quote = quote
+            self.entries = entries
+        } else {
+            throw FeeError.invalidASN1Sequence
+        }
+    }
+
+    /// Find a fee entry matching the given token.
+    /// When `isBaseToken` is true, also matches entries with no token (which default to the base token).
+    public func entry(for token: Account, isBaseToken: Bool = false) -> FeeEntry? {
+        entries.first { entry in
+            if isBaseToken && entry.token == nil { return true }
+            return entry.token?.publicKeyString == token.publicKeyString
+        }
     }
 }

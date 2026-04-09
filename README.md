@@ -169,16 +169,14 @@ Representatives may charge a fee to issue permanent votes. Permanent votes are r
 
 **Publish a Block via API**
 ```js
-let network: NetworkAlias = .main
-
-let api = try KeetaApi(network: network)
+let api = try KeetaApi(network: .main)
 
 // Use the `AccountBuilder` to create a 'senderAccount'
 // Use the `BlockBuilder` to construct a 'sendBlock'
 
 try await api.publish(blocks: [sendBlock]) { temporaryStaple in
     // Compute the fee block, will be published together with the 'sendBlock'
-    try BlockBuilder.feeBlock(for: temporaryStaple, account: senderAccount, network: network)
+    try await BlockBuilder.feeBlock(for: temporaryStaple, account: senderAccount, api: api)
 }
 ```
 
