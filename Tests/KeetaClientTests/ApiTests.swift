@@ -1,17 +1,18 @@
-import XCTest
+import Foundation
+import Testing
 import KeetaClient
 import BigInt
 
-class ApiTests: XCTestCase {
+@Suite(.serialized) struct ApiTests {
     
-    var config: NetworkConfig!
+    let config: NetworkConfig
+    let wellFundedAccount: Account
     
-    let wellFundedAccountSeed = "fd2bb78b1ba8b4d4b0ea6887c1725929f075e9cdfe065d07bc7070815bd87cff"
-    var wellFundedAccount: Account!
+    private static let wellFundedAccountSeed = "fd2bb78b1ba8b4d4b0ea6887c1725929f075e9cdfe065d07bc7070815bd87cff"
     
-    override func setUp() async throws {
+    init() async throws {
         config = try .create(for: .test)
-        wellFundedAccount = try AccountBuilder.create(fromSeed: wellFundedAccountSeed, index: 13)
+        wellFundedAccount = try AccountBuilder.create(fromSeed: Self.wellFundedAccountSeed, index: 14)
         print(wellFundedAccount.publicKeyString)
         
         // Try to recover well funded account if needed
@@ -22,32 +23,32 @@ class ApiTests: XCTestCase {
         }
     }
     
-    func test_api_getBalanceOfAccountWithFunds() async throws {
+    @Test func api_getBalanceOfAccountWithFunds() async throws {
         let api = try createAPI()
         
         let balance = try await api.balance(for: wellFundedAccount)
         
-        XCTAssertEqual(balance.account, wellFundedAccount.publicKeyString)
-        XCTAssertEqual(balance.rawBalances.count, 1, "Expected only one balance of the base token")
-        XCTAssertTrue(balance.rawBalances[config.baseToken.publicKeyString, default: 0] > 0)
+        #expect(balance.account == wellFundedAccount.publicKeyString)
+        #expect(balance.rawBalances.count == 1, "Expected only one balance of the base token")
+        #expect(balance.rawBalances[config.baseToken.publicKeyString, default: 0] > 0)
     }
     
-    func test_fetchCertificates() async throws {
+    @Test func fetchCertificates() async throws {
         let api = try createAPI()
         
         let account = try AccountBuilder.create(
             fromPublicKey: "keeta_aabg2lkwuy4gvzr44cniihdmwzinfuunqv4qgsuhbq7jpt4qms622tldjbdexwy"
         )
         let fetchedAll = try await api.certificates(for: account)
-        XCTAssertTrue(fetchedAll.count > 20)
+        #expect(fetchedAll.count >= 20)
         
-        let first = try XCTUnwrap(fetchedAll.first)
+        let first = try #require(fetchedAll.first)
         let fetchedSpecific = try await api.certificate(for: account, hash: first.hash)
         
-        XCTAssertEqual(first, fetchedSpecific)
+        #expect(first == fetchedSpecific)
     }
-        
-    func test_modifyCertificates() async throws {
+    
+    @Test func modifyCertificates() async throws {
         let api = try createAPI()
         
         let seed = "5fb3a1e05f46b8ea4dc56b95f575229586b225a335d8d06f723e544dac5bdc64"
@@ -87,9 +88,9 @@ class ApiTests: XCTestCase {
         // Fetch certificate from chain
         var allCertificates = try await api.certificates(for: certAccount)
         
-        XCTAssertEqual(allCertificates.count, 1)
-        let fetchedCertificate = try XCTUnwrap(allCertificates.first)
-        XCTAssertEqual(fetchedCertificate, localCertificate)
+        #expect(allCertificates.count == 1)
+        let fetchedCertificate = try #require(allCertificates.first)
+        #expect(fetchedCertificate == localCertificate)
         
         // Remove certificate from account
         let removeOperation = ModifyCertificateOperation(operation: .remove(hash: fetchedCertificate.hash))
@@ -103,10 +104,10 @@ class ApiTests: XCTestCase {
         try await api.publish(blocks: [removeBlock], feeAccount: certAccount)
         
         allCertificates = try await api.certificates(for: certAccount)
-        XCTAssertEqual(allCertificates, [])
+        #expect(allCertificates == [])
     }
     
-    func test_recoverAccounts() async throws {
+    @Test func recoverAccounts() async throws {
         for version in Block.Version.all {
             let api = try createAPI()
             
@@ -123,7 +124,7 @@ class ApiTests: XCTestCase {
             // Get temporary votes for send block
             let send = try SendOperation(amount: TokenAmount(raw: 1), to: newRecipient, token: config.baseToken)
             let senderBalance = try await api.balance(for: newAccount)
-            XCTAssertNil(senderBalance.currentHeadBlock)
+            #expect(senderBalance.currentHeadBlock == nil)
             
             let sendBlock = try BlockBuilder(version: version)
                 .start(from: senderBalance.currentHeadBlock, network: config.network.id)
@@ -142,19 +143,19 @@ class ApiTests: XCTestCase {
             
             do {
                 _ = try await api.votes(for: [anotherSendBlock])
-                XCTFail("Shouldn't receive votes for a conflicting \(version) block")
+                Issue.record("Shouldn't receive votes for a conflicting \(version) block")
                 return
             } catch RequestError<KeetaErrorResponse>.error(_, let error) {
-                XCTAssertEqual(error.type, .ledger)
-                XCTAssertEqual(error.code, .successorVoteExists)
+                #expect(error.type == .ledger)
+                #expect(error.code == .successorVoteExists)
             } catch {
-                XCTFail("Unknown error: \(error)")
+                Issue.record("Unknown error: \(error)")
             }
             
             // Recover temporary votes
             let recoveredTemporaryVotes = try await api.recoverVotes(for: newAccount)
-            XCTAssertEqual(Set(temporaryVotes.map(\.id)), Set(recoveredTemporaryVotes.map(\.id)))
-            XCTAssertTrue(recoveredTemporaryVotes.allSatisfy { !$0.permanent })
+            #expect(Set(temporaryVotes.map(\.id)) == Set(recoveredTemporaryVotes.map(\.id)))
+            #expect(recoveredTemporaryVotes.allSatisfy { !$0.permanent })
             
             // Pay fees if needed
             let blocksToPublish: [Block]
@@ -176,9 +177,9 @@ class ApiTests: XCTestCase {
             
             // Recover permanent votes
             let recoveredTemporaryAndPermanentVotes = try await api.recoverVotes(for: newAccount)
-            XCTAssertEqual(recoveredTemporaryAndPermanentVotes.count, temporaryVotes.count + permanentVotes.count)
+            #expect(recoveredTemporaryAndPermanentVotes.count == temporaryVotes.count + permanentVotes.count)
             let recoveredPermanentVotes = recoveredTemporaryAndPermanentVotes.filter { $0.permanent }
-            XCTAssertEqual(Set(permanentVotes.map(\.id)), Set(recoveredPermanentVotes.map(\.id)))
+            #expect(Set(permanentVotes.map(\.id)) == Set(recoveredPermanentVotes.map(\.id)))
             
             // Publish pending block with recovered votes
             let staple = try VoteStaple.create(from: recoveredPermanentVotes, blocks: blocksToPublish)
@@ -190,13 +191,13 @@ class ApiTests: XCTestCase {
         }
     }
     
-    func test_noPendingBlockToRecover() async throws {
+    @Test func noPendingBlockToRecover() async throws {
         let api = try createAPI()
         let recoveredVotes = try await api.recoverVotes(for: wellFundedAccount)
-        XCTAssertTrue(recoveredVotes.isEmpty, "There shouldn't be any votes to recover: \(recoveredVotes)")
+        #expect(recoveredVotes.isEmpty, "There shouldn't be any votes to recover: \(recoveredVotes)")
     }
     
-    func test_api_publishManually() async throws {
+    @Test func api_publishManually() async throws {
         let api = try createAPI()
         
         let newRecipient = try AccountBuilder.new()
@@ -213,8 +214,8 @@ class ApiTests: XCTestCase {
             .seal()
         
         let temporaryVotes = try await api.votes(for: [sendBlock])
-        XCTAssertEqual(temporaryVotes.count, config.reps.count, "Expected one temporary vote from each rep")
-        XCTAssertTrue(temporaryVotes.allSatisfy { !$0.permanent }, "Expected all votes to be temporary:\n\(temporaryVotes)")
+        #expect(temporaryVotes.count == config.reps.count, "Expected one temporary vote from each rep")
+        #expect(temporaryVotes.allSatisfy { !$0.permanent }, "Expected all votes to be temporary:\n\(temporaryVotes)")
         
         let blocksToPublish: [Block]
         if temporaryVotes.requiresFees {
@@ -228,8 +229,8 @@ class ApiTests: XCTestCase {
         }
         
         let permanentVotes = try await api.votes(for: blocksToPublish, temporaryVotes: temporaryVotes)
-        XCTAssertEqual(permanentVotes.count, config.reps.count, "Expected one permanent vote from each rep")
-        XCTAssertTrue(permanentVotes.allSatisfy { $0.permanent }, "Expected all votes to be permanent:\n\(permanentVotes)")
+        #expect(permanentVotes.count == config.reps.count, "Expected one permanent vote from each rep")
+        #expect(permanentVotes.allSatisfy { $0.permanent }, "Expected all votes to be permanent:\n\(permanentVotes)")
         
         let voteStaple = try VoteStaple.create(from: permanentVotes, blocks: blocksToPublish)
         try await api.publish(voteStaple: voteStaple)
@@ -238,29 +239,28 @@ class ApiTests: XCTestCase {
         try await api.verify(account: newRecipient, head: nil, balance: .init(1))
     }
     
-    func test_updateReps() async throws {
+    @Test func updateReps() async throws {
         let api = try createAPI()
         try await api.updateRepresentatives()
         
         api.reps.forEach {
-            XCTAssertNotNil($0.weight, "Expected rep \($0.address) to have weight")
+            #expect($0.weight != nil, "Expected rep \($0.address) to have weight")
         }
         
-        let preferred = api.preferredRep
-        let preferredRep = try XCTUnwrap(preferred)
+        let preferredRep = api.preferredRep
         let otherReps = api.reps.filter { $0.address != preferredRep.address }
         
-        let highestWeight = try XCTUnwrap(preferredRep.weight)
-        XCTAssertTrue(otherReps.allSatisfy { ($0.weight ?? 0) <= highestWeight })
+        let highestWeight = try #require(preferredRep.weight)
+        #expect(otherReps.allSatisfy { ($0.weight ?? 0) <= highestWeight })
     }
     
-    func test_history() async throws {
+    @Test func history() async throws {
         let api = try createAPI()
         let history = try await api.history(of: wellFundedAccount)
-        XCTAssertFalse(history.isEmpty)
+        #expect(!history.isEmpty)
     }
     
-    func test_idempotentBlocks() async throws {
+    @Test func idempotentBlocks() async throws {
         let api = try createAPI()
         
         for version in Block.Version.all {
@@ -284,7 +284,7 @@ class ApiTests: XCTestCase {
             
             // Retrieve published block for idempotent key
             let retrievedBlock = try await api.block(for: sender, idempotent: idempotentKey)
-            XCTAssertEqual(retrievedBlock.hash, sendBlock1.hash)
+            #expect(retrievedBlock.hash == sendBlock1.hash)
             
             let send2 = try SendOperation(amount: TokenAmount(raw: 2), to: receiver, token: config.baseToken)
             let sendBlock2 = try BlockBuilder(version: version)
@@ -293,27 +293,27 @@ class ApiTests: XCTestCase {
                 .add(operation: send2)
                 .add(idempotent: idempotentKey)
                 .seal()
-                
+            
             // Expect to fail as idempotent key was already used
             do {
                 try await api.publish(blocks: [sendBlock2], feeAccount: sender)
-                XCTFail("Another block with the same idempotent key block shouldn't be allowed to publish")
+                Issue.record("Another block with the same idempotent key block shouldn't be allowed to publish")
             } catch KeetaApiError.noVotes(let errors) {
-                let error = try XCTUnwrap(errors.first)
+                let error = try #require(errors.first)
                 
                 if case RequestError<KeetaErrorResponse>.error(_, let error) = error {
-                    XCTAssertEqual(error.type, .ledger)
-                    XCTAssertEqual(error.code, .ledgerIdempotentKeyAlreadyExists)
+                    #expect(error.type == .ledger)
+                    #expect(error.code == .ledgerIdempotentKeyAlreadyExists)
                 } else {
-                    XCTFail("Unknown error: \(error)")
+                    Issue.record("Unknown error: \(error)")
                 }
             } catch {
-                XCTFail("Unexpected error: \(error)")
+                Issue.record("Unexpected error: \(error)")
             }
         }
     }
     
-    func test_receiveBlock() async throws {
+    @Test func receiveBlock() async throws {
         let api = try createAPI()
         
         let account1 = try AccountBuilder.new()
@@ -341,14 +341,14 @@ class ApiTests: XCTestCase {
         
         do {
             try await api.publish(blocks: [needToReceiveBlock, sendBlock], feeAccount: account2)
-            XCTFail("Didn't expect this block order to be valid!")
+            Issue.record("Didn't expect this block order to be valid!")
             return
         } catch {}
         
         let result = try await api.publish(blocks: [sendBlock, needToReceiveBlock], feeAccount: account2)
         let baseTokenPubKey = config.baseToken.publicKeyString
-        XCTAssertTrue(result.fees.allSatisfy({ $0.token == baseTokenPubKey }))
-        XCTAssertEqual(Array(result.feeAmounts.keys), [baseTokenPubKey])
+        #expect(result.fees.allSatisfy({ $0.token == baseTokenPubKey }))
+        #expect(Array(result.feeAmounts.keys) == [baseTokenPubKey])
         
         // Verify balances
         try await api.verify(account: account1, head: needToReceiveBlock.hash, balance: 2)
@@ -357,7 +357,7 @@ class ApiTests: XCTestCase {
         try await api.verify(account: account2, head: result.feeBlockHash, balance: 900_000 - (2 + feesPaid))
     }
     
-    func test_swapTokens() async throws {
+    @Test func swapTokens() async throws {
         let api = try createAPI()
         
         // Fund account 1 with enough base token for the trade
@@ -427,33 +427,33 @@ class ApiTests: XCTestCase {
         
         // Verify balances
         let accountWithBaseTokenBalance = try await api.balance(for: accountWithBaseToken)
-        XCTAssertEqual(accountWithBaseTokenBalance.rawBalances.count, 2, "\(accountWithBaseTokenBalance)")
-        XCTAssertEqual(accountWithBaseTokenBalance.rawBalances[config.baseToken.publicKeyString], account1InitialBalance - accountWithBaseTokenSend.amount)
-        XCTAssertEqual(accountWithBaseTokenBalance.rawBalances[customToken.publicKeyString], accountWithCustomTokenSend.amount)
-        XCTAssertEqual(accountWithBaseTokenBalance.currentHeadBlock, accountWithBaseTokenSendBlock.hash)
+        #expect(accountWithBaseTokenBalance.rawBalances.count == 2, "\(accountWithBaseTokenBalance)")
+        #expect(accountWithBaseTokenBalance.rawBalances[config.baseToken.publicKeyString] == account1InitialBalance - accountWithBaseTokenSend.amount)
+        #expect(accountWithBaseTokenBalance.rawBalances[customToken.publicKeyString] == accountWithCustomTokenSend.amount)
+        #expect(accountWithBaseTokenBalance.currentHeadBlock == accountWithBaseTokenSendBlock.hash)
         
         let accountWithCustomTokenBalance = try await api.balance(for: accountWithCustomToken)
-        XCTAssertEqual(accountWithCustomTokenBalance.rawBalances.count, 2, "\(accountWithCustomTokenBalance)")
+        #expect(accountWithCustomTokenBalance.rawBalances.count == 2, "\(accountWithCustomTokenBalance)")
         
-        let baseBalanceRaw = try XCTUnwrap(accountWithCustomTokenBalance.rawBalances[config.baseToken.publicKeyString])
-        XCTAssertTrue(baseBalanceRaw < 100_000)
-        XCTAssertEqual(accountWithCustomTokenBalance.rawBalances[customToken.publicKeyString], mint.amount - accountWithCustomTokenSend.amount)
-        XCTAssertEqual(accountWithCustomTokenBalance.currentHeadBlock, result.feeBlockHash ?? accountWithCustomTokenSendBlock.hash)
+        let baseBalanceRaw = try #require(accountWithCustomTokenBalance.rawBalances[config.baseToken.publicKeyString])
+        #expect(baseBalanceRaw < 100_000)
+        #expect(accountWithCustomTokenBalance.rawBalances[customToken.publicKeyString] == mint.amount - accountWithCustomTokenSend.amount)
+        #expect(accountWithCustomTokenBalance.currentHeadBlock == result.feeBlockHash ?? accountWithCustomTokenSendBlock.hash)
     }
     
-    func test_AccountInfo() async throws {
+    @Test func accountInfo() async throws {
         let api = try createAPI()
         
         let newAccount = try AccountBuilder.new()
-
+        
         // Fund account to pay network fee
         try await api.send(amount: 900_000, from: wellFundedAccount, to: newAccount, config: config)
-
+        
         var accountInfo = try await api.accountInfo(for: newAccount)
-        XCTAssertTrue(accountInfo.name.isEmpty)
-        XCTAssertTrue(accountInfo.description.isEmpty)
-        XCTAssertTrue(accountInfo.metadata.isEmpty)
-        XCTAssertNil(accountInfo.supply)
+        #expect(accountInfo.name.isEmpty)
+        #expect(accountInfo.description.isEmpty)
+        #expect(accountInfo.metadata.isEmpty)
+        #expect(accountInfo.supply == nil)
         
         let setInfo = SetInfoOperation(
             name: "account_info_\(String.randomLetter())\(String.randomLetter())\(String.randomLetter())".uppercased(),
@@ -470,13 +470,13 @@ class ApiTests: XCTestCase {
         try await api.publish(blocks: [setInfoBlock], feeAccount: newAccount)
         
         accountInfo = try await api.accountInfo(for: newAccount)
-        XCTAssertEqual(accountInfo.name, setInfo.name)
-        XCTAssertEqual(accountInfo.description, setInfo.description)
-        XCTAssertEqual(accountInfo.metadata, setInfo.metaData)
-        XCTAssertNil(accountInfo.supply)
+        #expect(accountInfo.name == setInfo.name)
+        #expect(accountInfo.description == setInfo.description)
+        #expect(accountInfo.metadata == setInfo.metaData)
+        #expect(accountInfo.supply == nil)
     }
     
-    func test_voteQuotes() async throws {
+    @Test func voteQuotes() async throws {
         let api = try createAPI()
         
         // Fund new account
@@ -500,14 +500,14 @@ class ApiTests: XCTestCase {
         // Expects quotes and fees are matching
         let votePayTos = Set(tempVotes.feeEntries.map { $0.payTo?.publicKeyString })
         let quotePayTos = Set(quotes.flatMap { $0.fee.entries }.map { $0.payTo?.publicKeyString })
-        XCTAssertEqual(votePayTos, quotePayTos)
-
+        #expect(votePayTos == quotePayTos)
+        
         let voteAmounts = tempVotes.feeEntries.map { $0.amount }
         let quoteAmounts = quotes.flatMap { $0.fee.entries }.map { $0.amount }
-        XCTAssertEqual(voteAmounts, quoteAmounts)
+        #expect(voteAmounts == quoteAmounts)
     }
     
-    func test_modifyPermissionSendOnBehalf() async throws {
+    @Test func modifyPermissionSendOnBehalf() async throws {
         let api = try createAPI()
         
         let owner = try AccountBuilder.new()
@@ -515,7 +515,7 @@ class ApiTests: XCTestCase {
         
         // Retrieve granted permissions from network
         let initialGrantedPermissions = try await api.grantedPermissions(of: owner)
-        XCTAssertEqual(initialGrantedPermissions, [])
+        #expect(initialGrantedPermissions == [])
         
         try await api.send(amount: 3_600_000, from: wellFundedAccount, to: owner, config: config)
         
@@ -534,32 +534,32 @@ class ApiTests: XCTestCase {
         try await api.publish(blocks: [modifyBlock], feeAccount: owner)
         
         let history = try await api.history(of: owner)
-        let modifyHistoryBlock = try XCTUnwrap(history.first?.blocks.first)
+        let modifyHistoryBlock = try #require(history.first?.blocks.first)
         
-        let operation = try XCTUnwrap(modifyHistoryBlock.rawData.operations.first)
+        let operation = try #require(modifyHistoryBlock.rawData.operations.first)
         let parsed = try operation.to(ModifyPermissionsOperation.self)
         
-        XCTAssertEqual(parsed.permission, modifyPermission.permission)
+        #expect(parsed.permission == modifyPermission.permission)
         
         // Retrieve granted permissions from network
         let grantedPermissions = try await api.grantedPermissions(of: owner)
-        XCTAssertEqual(grantedPermissions.count, 1)
-        let grantedPermission = try XCTUnwrap(grantedPermissions.first)
-        XCTAssertEqual(grantedPermission.principal.publicKeyString, other.publicKeyString)
-        XCTAssertEqual(grantedPermission.target?.publicKeyString, owner.publicKeyString)
-        XCTAssertEqual(grantedPermission.permission, modifyPermission.permission)
+        #expect(grantedPermissions.count == 1)
+        let grantedPermission = try #require(grantedPermissions.first)
+        #expect(grantedPermission.principal.publicKeyString == other.publicKeyString)
+        #expect(grantedPermission.target?.publicKeyString == owner.publicKeyString)
+        #expect(grantedPermission.permission == modifyPermission.permission)
         
         // Retrieve received permissions from network
         let receivedPermissions = try await api.permissionsReceived(for: other)
         
-        XCTAssertEqual(receivedPermissions.count, 1)
-        let receivedPermission = try XCTUnwrap(receivedPermissions.first)
-        XCTAssertEqual(receivedPermission.principal.publicKeyString, other.publicKeyString)
-        XCTAssertEqual(receivedPermission.target?.publicKeyString, owner.publicKeyString)
-        XCTAssertEqual(receivedPermission.permission, modifyPermission.permission)
+        #expect(receivedPermissions.count == 1)
+        let receivedPermission = try #require(receivedPermissions.first)
+        #expect(receivedPermission.principal.publicKeyString == other.publicKeyString)
+        #expect(receivedPermission.target?.publicKeyString == owner.publicKeyString)
+        #expect(receivedPermission.permission == modifyPermission.permission)
         
         // Ensure both endpoints return the same data
-        XCTAssertEqual(grantedPermissions, receivedPermissions)
+        #expect(grantedPermissions == receivedPermissions)
         
         let ownerBalanceBeforeSend = try await api.balance(for: owner)
         
@@ -579,16 +579,16 @@ class ApiTests: XCTestCase {
         
         // Verify balances
         let ownerBalanceAfterSend = try await api.balance(for: owner)
-        XCTAssertLessThanOrEqual(
-            ownerBalanceAfterSend.rawBalances[config.baseToken.publicKeyString, default: 0] + send.amount,
-            ownerBalanceBeforeSend.rawBalances[config.baseToken.publicKeyString, default: 0]
+        #expect(
+            ownerBalanceAfterSend.rawBalances[config.baseToken.publicKeyString, default: 0] + send.amount
+                <= ownerBalanceBeforeSend.rawBalances[config.baseToken.publicKeyString, default: 0]
         )
         
         let recipientBalance = try await api.balance(for: recipient)
-        XCTAssertEqual(send.amount, recipientBalance.rawBalances[config.baseToken.publicKeyString])
+        #expect(send.amount == recipientBalance.rawBalances[config.baseToken.publicKeyString])
     }
     
-    func test_permissions() async throws {
+    @Test func permissions() async throws {
         let api = try createAPI()
         
         let owner = try AccountBuilder.new()
@@ -620,8 +620,8 @@ class ApiTests: XCTestCase {
         
         // Verify base permissions got added
         var info = try await api.accountInfo(for: storage)
-        XCTAssertEqual(info.defaultPermission?.baseFlags, [.ACCESS, .MANAGE_CERTIFICATE])
-        XCTAssertEqual(info.defaultPermission?.external, .zero)
+        #expect(info.defaultPermission?.baseFlags == [.ACCESS, .MANAGE_CERTIFICATE])
+        #expect(info.defaultPermission?.external == .zero)
         
         // Override default base permissions to remove manage certificate
         let overrideBlock = try BlockBuilder()
@@ -641,11 +641,11 @@ class ApiTests: XCTestCase {
         
         // Verify permissions got reduced
         info = try await api.accountInfo(for: storage)
-        XCTAssertEqual(info.defaultPermission?.baseFlags, [.ACCESS])
-        XCTAssertEqual(info.defaultPermission?.external, .zero)
+        #expect(info.defaultPermission?.baseFlags == [.ACCESS])
+        #expect(info.defaultPermission?.external == .zero)
     }
     
-    func test_createToken() async throws {
+    @Test func createToken() async throws {
         let api = try createAPI()
         
         // Fund token owner's account to cover token creation tx fee
@@ -673,9 +673,9 @@ class ApiTests: XCTestCase {
         try await api.publish(blocks: [tokenCreationBlock, tokenMintBlock], feeAccount: tokenOwner)
         
         var tokenBalance = try await api.balance(for: newToken)
-        XCTAssertEqual(tokenBalance.rawBalances.count, 1)
-        XCTAssertEqual(tokenBalance.rawBalances[newToken.publicKeyString], mint.amount)
-        XCTAssertEqual(tokenBalance.currentHeadBlock, tokenMintBlock.hash)
+        #expect(tokenBalance.rawBalances.count == 1)
+        #expect(tokenBalance.rawBalances[newToken.publicKeyString] == mint.amount)
+        #expect(tokenBalance.currentHeadBlock == tokenMintBlock.hash)
         
         // Burn some of the token supply
         let burn = TokenAdminSupplyOperation(amount: TokenAmount(raw: 10), method: .subtract)
@@ -689,9 +689,9 @@ class ApiTests: XCTestCase {
         try await api.publish(blocks: [tokenBurnBlock], feeAccount: tokenOwner)
         
         tokenBalance = try await api.balance(for: newToken)
-        XCTAssertEqual(tokenBalance.rawBalances.count, 1)
-        XCTAssertEqual(tokenBalance.rawBalances[newToken.publicKeyString], mint.amount - burn.amount)
-        XCTAssertEqual(tokenBalance.currentHeadBlock, tokenBurnBlock.hash)
+        #expect(tokenBalance.rawBalances.count == 1)
+        #expect(tokenBalance.rawBalances[newToken.publicKeyString] == mint.amount - burn.amount)
+        #expect(tokenBalance.currentHeadBlock == tokenBurnBlock.hash)
         
         // Send token
         let recipient = try AccountBuilder.new()
@@ -707,14 +707,14 @@ class ApiTests: XCTestCase {
         try await api.publish(blocks: [tokenSendBlock], feeAccount: tokenOwner)
         
         tokenBalance = try await api.balance(for: newToken)
-        XCTAssertEqual(tokenBalance.rawBalances.count, 1)
-        XCTAssertEqual(tokenBalance.rawBalances[newToken.publicKeyString], mint.amount - burn.amount - send.amount)
-        XCTAssertEqual(tokenBalance.currentHeadBlock, tokenSendBlock.hash)
+        #expect(tokenBalance.rawBalances.count == 1)
+        #expect(tokenBalance.rawBalances[newToken.publicKeyString] == mint.amount - burn.amount - send.amount)
+        #expect(tokenBalance.currentHeadBlock == tokenSendBlock.hash)
         
         let recipientBalance = try await api.balance(for: recipient)
-        XCTAssertEqual(recipientBalance.rawBalances.count, 1)
-        XCTAssertEqual(recipientBalance.rawBalances[newToken.publicKeyString], send.amount)
-        XCTAssertNil(recipientBalance.currentHeadBlock)
+        #expect(recipientBalance.rawBalances.count == 1)
+        #expect(recipientBalance.rawBalances[newToken.publicKeyString] == send.amount)
+        #expect(recipientBalance.currentHeadBlock == nil)
         
         // Add additional tokens to recipient to cover network fees
         try await api.send(amount: 900_000, from: wellFundedAccount, to: recipient, config: config)
